@@ -124,6 +124,16 @@ npm run self-test
   - The docs’ Files schema only explicitly allows file `entityType` values `person`, `project`, and `task`.
   - The docs’ Blocks schema includes an `image` block with `attachment.{_id,handle,title,size,mimeType,extension,url}`.
   - A smallest disposable `POST /v1.11/blocks` image-block probe using an existing Plutio image file still failed with HTTP `400` / `Cannot read properties of null (reading 'designOptions')`, so the writable wiki image-block contract remains unresolved.
+- **New 2026-04-13 re-probe:** direct fresh-image upload is also **not yet validated for tasks**.
+  - Disposable task used: record `_id` `wgAavigG3AMxiPtit` in `Zzz test`.
+  - Tested multipart `POST /v1.11/files` with all of:
+    - `entityType`, `entityId`, `file`
+    - `entityType`, `entityId`, `title`, `file`
+    - `entityType`, `entityId`, `title`, `handle`, `file`
+  - All task variants failed with HTTP `400` / `Handle is required`.
+  - Scoped follow-up read `GET /v1.11/files?entityType=task&entityId=wgAavigG3AMxiPtit` returned `[]`.
+  - Matching failures on both task and wiki-page routes strongly suggest the missing piece is the underlying file-ingest / handle-minting contract, not just wiki-page entity scoping.
+  - Therefore no new MCP write tool should claim end-to-end image upload support yet for either tasks or wiki pages.
 - Safe placement resolution matches projects by exact `name` and boards/groups by exact `title`.
 
 ## Planned next steps
