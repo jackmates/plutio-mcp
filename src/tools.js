@@ -56,6 +56,79 @@ function pickTaskPayload({
   );
 }
 
+function pickProposalContractPayload({
+  name,
+  projectId,
+  personId,
+  companyId,
+  status,
+  currency,
+  expiresAt,
+  issueDate,
+  validUntil,
+  tags,
+  customFields
+}) {
+  return pick(
+    {
+      name,
+      projectId,
+      personId,
+      companyId,
+      status,
+      currency,
+      expiresAt,
+      issueDate,
+      validUntil,
+      tags,
+      customFields
+    },
+    [
+      'name',
+      'projectId',
+      'personId',
+      'companyId',
+      'status',
+      'currency',
+      'expiresAt',
+      'issueDate',
+      'validUntil',
+      'tags',
+      'customFields'
+    ]
+  );
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderParagraphHtml(text) {
+  return `<p>${escapeHtml(text).replace(/\n/g, '</p><p>')}</p>`;
+}
+
+function pickDocumentBlockPayload({ entityType, entityId, type, textPlain, textHTML, name, hasText, signatureType, options, includeEntityScope = true }) {
+  const resolvedHasText = hasText !== undefined ? hasText : Boolean(textPlain || textHTML);
+  return {
+    ...(includeEntityScope ? { entityType, entityId } : {}),
+    ...pick(
+      {
+        type,
+        name,
+        hasText: resolvedHasText,
+        textPlain,
+        textHTML: textHTML || (textPlain ? renderParagraphHtml(textPlain) : undefined),
+        signatureType
+      },
+      ['type', 'name', 'hasText', 'textPlain', 'textHTML', 'signatureType']
+    ),
+    ...(options && typeof options === 'object' ? options : {})
+  };
+}
+
 function createTools(client) {
   return {
     async getBusiness({ business }) {
@@ -200,6 +273,158 @@ function createTools(client) {
       return client.request('blocks', {
         query: withPaging(filter, skip, limit),
         business
+      });
+    },
+
+    async listProposals({ search, status, skip, limit, business }) {
+      const filter = {};
+      if (status) filter.status = status;
+      return client.request('proposals', {
+        query: pick({ q: search || (Object.keys(filter).length ? filter : undefined), skip, limit }, ['q', 'skip', 'limit']),
+        business
+      });
+    },
+
+    async listContracts({ search, status, skip, limit, business }) {
+      const filter = {};
+      if (status) filter.status = status;
+      return client.request('contracts', {
+        query: pick({ q: search || (Object.keys(filter).length ? filter : undefined), skip, limit }, ['q', 'skip', 'limit']),
+        business
+      });
+    },
+
+    async createProposal(args) {
+      const { name, business } = args;
+      if (!name) {
+        throw new Error('createProposal requires name');
+      }
+      return client.request('proposals', {
+        method: 'POST',
+        business,
+        body: pickProposalContractPayload(args)
+      });
+    },
+
+    async updateProposal({ proposalId, id, business, ...updates }) {
+      const canonicalProposalId = proposalId || id;
+      if (!canonicalProposalId) {
+        throw new Error('updateProposal requires proposalId (canonical proposal _id).');
+      }
+      return client.request('proposals', {
+        method: 'PUT',
+        business,
+        body: {
+          _id: canonicalProposalId,
+          ...pickProposalContractPayload(updates)
+        }
+      });
+    },
+
+    async createContract(args) {
+      const { name, business } = args;
+      if (!name) {
+        throw new Error('createContract requires name');
+      }
+      return client.request('contracts', {
+        method: 'POST',
+        business,
+        body: pickProposalContractPayload(args)
+      });
+    },
+
+    async updateContract({ contractId, id, business, ...updates }) {
+      const canonicalContractId = contractId || id;
+      if (!canonicalContractId) {
+        throw new Error('updateContract requires contractId (canonical contract _id).');
+      }
+      return client.request('contracts', {
+        method: 'PUT',
+        business,
+        body: {
+          _id: canonicalContractId,
+          ...pickProposalContractPayload(updates)
+        }
+      });
+    },
+
+    async createProposalBlock({ entityId, type, textPlain, textHTML, name, hasText, signatureType, options, business }) {
+      return client.request('blocks', {
+        method: 'POST',
+        business,
+        body: pickDocumentBlockPayload({
+          entityType: 'proposal',
+          entityId,
+          type,
+          textPlain,
+          textHTML,
+          name,
+          hasText,
+          signatureType,
+          options
+        })
+      });
+    },
+
+    async updateProposalBlock({ blockId, type, textPlain, textHTML, name, hasText, signatureType, options, business }) {
+      return client.request('blocks', {
+        method: 'PUT',
+        business,
+        body: {
+          _id: blockId,
+          ...pickDocumentBlockPayload({
+            entityType: 'proposal',
+            entityId: undefined,
+            type,
+            textPlain,
+            textHTML,
+            name,
+            hasText,
+            signatureType,
+            options,
+            includeEntityScope: false
+          })
+        }
+      });
+    },
+
+    async createContractBlock({ entityId, type, textPlain, textHTML, name, hasText, signatureType, options, business }) {
+      return client.request('blocks', {
+        method: 'POST',
+        business,
+        body: pickDocumentBlockPayload({
+          entityType: 'contract',
+          entityId,
+          type,
+          textPlain,
+          textHTML,
+          name,
+          hasText,
+          signatureType,
+          options
+        })
+      });
+    },
+
+    async updateContractBlock({ blockId, type, textPlain, textHTML, name, hasText, signatureType, options, business }) {
+      return client.request('blocks', {
+        method: 'PUT',
+        business,
+        body: {
+          _id: blockId,
+          ...pickDocumentBlockPayload({
+            entityType: 'contract',
+            entityId: undefined,
+            type,
+            textPlain,
+            textHTML,
+            name,
+            hasText,
+            signatureType,
+            options,
+            includeEntityScope: false
+          })
+        }
       });
     },
 

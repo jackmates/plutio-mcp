@@ -36,6 +36,16 @@ Implemented so far:
   - `plutio_create_wiki`
   - `plutio_create_wiki_page`
   - `plutio_list_blocks`
+  - `plutio_list_proposals`
+  - `plutio_list_contracts`
+  - `plutio_create_proposal`
+  - `plutio_update_proposal`
+  - `plutio_create_contract`
+  - `plutio_update_contract`
+  - `plutio_create_proposal_block`
+  - `plutio_update_proposal_block`
+  - `plutio_create_contract_block`
+  - `plutio_update_contract_block`
   - `plutio_list_task_boards`
   - `plutio_list_task_groups`
   - `plutio_list_tasks`
@@ -116,6 +126,21 @@ npm run self-test
   - `{ "_id": "WIKI_ID", "shareSettings": { "isShared": true }, "privateShareSettings": { "type": "roles", "roles": ["team", "co-owner"] } }`
 - live reads also show role combinations such as `["co-owner"]`, `["team", "co-owner"]`, and `["client", "co-owner"]`.
 - `plutio_create_wiki_page` is validated with `POST /v1.11/wiki-entities` using `wikiId`, `parentId`, `title`, and `type: "page"`; when text is supplied, the helper updates the generated `content` block via `PUT /v1.11/blocks` with `hasText`, `textPlain`, and `textHTML`.
+- proposal/contract read support now includes:
+  - `plutio_list_proposals`
+  - `plutio_list_contracts`
+- proposal/contract write support now includes:
+  - `plutio_create_proposal`
+  - `plutio_update_proposal`
+  - `plutio_create_contract`
+  - `plutio_update_contract`
+- validated live document findings folded into the MCP surface:
+  - proposal/contract create uses `name`, not `title`
+  - proposal default blocks observed on fresh create: `intro`, `content`, `signature`
+  - contract default blocks observed on fresh create: `content`, `signature`
+  - contract `intro` is not a safe writable assumption
+  - currently exposed safe document-block write helpers intentionally limit block creation/update to validated types: `content`, `html`, and `signature`
+  - for proposal/contract rendering, embedded images are often represented as HTML inside content-style blocks, so this MCP surface prefers HTML/text block updates over unresolved direct image-upload claims
 - live wiki records expose meaningful style metadata through `designOptions`, including values such as `fontFamily`, `bgColor`, `layout`, `maxWidth`, padding, border radius, and section color settings.
 - style reads are therefore validated at the model level, but style writes are still **not yet fully validated**.
 - Wiki page image/file attachment is still **not yet fully validated**.

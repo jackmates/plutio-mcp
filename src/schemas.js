@@ -213,6 +213,134 @@ const createWikiPageSchema = z.object({
   ...businessOverride
 });
 
+const listProposalsSchema = z.object({
+  search: optionalString.describe('Optional free-text search for proposals.'),
+  status: optionalString.describe('Optional proposal status filter.'),
+  ...paging,
+  ...businessOverride
+});
+
+const listContractsSchema = z.object({
+  search: optionalString.describe('Optional free-text search for contracts.'),
+  status: optionalString.describe('Optional contract status filter.'),
+  ...paging,
+  ...businessOverride
+});
+
+const proposalContractFields = {
+  name: optionalString.describe('Document name. Plutio create for proposals/contracts expects name, not title.'),
+  projectId: optionalString.describe('Optional project id.'),
+  personId: optionalString.describe('Optional person/client id.'),
+  companyId: optionalString.describe('Optional company id.'),
+  status: optionalString.describe('Optional document status.'),
+  currency: optionalString.describe('Optional currency code.'),
+  expiresAt: optionalString.describe('Optional ISO datetime expiration.'),
+  issueDate: optionalString.describe('Optional ISO datetime issue date.'),
+  validUntil: optionalString.describe('Optional ISO datetime valid-until date.'),
+  tags: z.array(z.string().min(1)).optional().describe('Optional tag list.'),
+  customFields: z.array(z.any()).optional().describe('Optional raw customFields payload passed through to Plutio.')
+};
+
+const createProposalSchema = z.object({
+  name: z.string().min(1).describe('Proposal name. Use name, not title.'),
+  ...proposalContractFields,
+  ...businessOverride
+});
+
+const updateProposalSchema = z.object({
+  proposalId: optionalString.describe('Canonical proposal record _id to update.'),
+  id: optionalString.describe('Legacy alias for proposalId. Prefer proposalId.'),
+  ...proposalContractFields,
+  ...businessOverride
+}).refine(
+  (data) => Boolean(data.proposalId || data.id),
+  {
+    message: 'updateProposal requires proposalId (canonical proposal _id).'
+  }
+).refine(
+  (data) => Object.keys(data).some((key) => !['proposalId', 'id', 'business'].includes(key) && data[key] !== undefined),
+  {
+    message: 'updateProposal requires at least one field to update.'
+  }
+);
+
+const createContractSchema = z.object({
+  name: z.string().min(1).describe('Contract name. Use name, not title.'),
+  ...proposalContractFields,
+  ...businessOverride
+});
+
+const updateContractSchema = z.object({
+  contractId: optionalString.describe('Canonical contract record _id to update.'),
+  id: optionalString.describe('Legacy alias for contractId. Prefer contractId.'),
+  ...proposalContractFields,
+  ...businessOverride
+}).refine(
+  (data) => Boolean(data.contractId || data.id),
+  {
+    message: 'updateContract requires contractId (canonical contract _id).'
+  }
+).refine(
+  (data) => Object.keys(data).some((key) => !['contractId', 'id', 'business'].includes(key) && data[key] !== undefined),
+  {
+    message: 'updateContract requires at least one field to update.'
+  }
+);
+
+const documentBlockFields = {
+  entityId: z.string().min(1).describe('Parent proposal/contract record _id.'),
+  type: z.enum(['content', 'html', 'signature']).describe('Validated safe block types for proposal/contract MCP writes.'),
+  textPlain: optionalString.describe('Optional plain text for content/html blocks.'),
+  textHTML: optionalString.describe('Optional HTML for content/html blocks. For proposals/contracts, images are often embedded via HTML in content blocks.'),
+  name: optionalString.describe('Optional block name/title when supported.'),
+  hasText: z.boolean().optional().describe('Optional hasText override. Defaults to true when textPlain or textHTML is supplied.'),
+  signatureType: optionalString.describe('Optional signature type for signature blocks if the API requires it.'),
+  options: z.any().optional().describe('Optional raw extra block fields for validated document-block experiments.'),
+  ...businessOverride
+};
+
+const createProposalBlockSchema = z.object({
+  ...documentBlockFields
+});
+
+const updateProposalBlockSchema = z.object({
+  blockId: z.string().min(1).describe('Proposal block _id to update.'),
+  type: z.enum(['content', 'html', 'signature']).optional().describe('Optional validated block type.'),
+  textPlain: optionalString.describe('Optional plain text update.'),
+  textHTML: optionalString.describe('Optional HTML update.'),
+  name: optionalString.describe('Optional block name/title update.'),
+  hasText: z.boolean().optional().describe('Optional hasText override.'),
+  signatureType: optionalString.describe('Optional signature type update.'),
+  options: z.any().optional().describe('Optional raw extra block fields for validated document-block experiments.'),
+  ...businessOverride
+}).refine(
+  (data) => Object.keys(data).some((key) => !['blockId', 'business'].includes(key) && data[key] !== undefined),
+  {
+    message: 'updateProposalBlock requires at least one field to update.'
+  }
+);
+
+const createContractBlockSchema = z.object({
+  ...documentBlockFields
+});
+
+const updateContractBlockSchema = z.object({
+  blockId: z.string().min(1).describe('Contract block _id to update.'),
+  type: z.enum(['content', 'html', 'signature']).optional().describe('Optional validated block type.'),
+  textPlain: optionalString.describe('Optional plain text update.'),
+  textHTML: optionalString.describe('Optional HTML update.'),
+  name: optionalString.describe('Optional block name/title update.'),
+  hasText: z.boolean().optional().describe('Optional hasText override.'),
+  signatureType: optionalString.describe('Optional signature type update.'),
+  options: z.any().optional().describe('Optional raw extra block fields for validated document-block experiments.'),
+  ...businessOverride
+}).refine(
+  (data) => Object.keys(data).some((key) => !['blockId', 'business'].includes(key) && data[key] !== undefined),
+  {
+    message: 'updateContractBlock requires at least one field to update.'
+  }
+);
+
 const listBlocksSchema = z.object({
   entityType: optionalString.describe('Optional entity type to scope blocks.'),
   entityId: optionalString.describe('Optional entity id to scope blocks.'),
@@ -244,5 +372,15 @@ module.exports = {
   listWikiSchema,
   createWikiSchema,
   createWikiPageSchema,
+  listProposalsSchema,
+  listContractsSchema,
+  createProposalSchema,
+  updateProposalSchema,
+  createContractSchema,
+  updateContractSchema,
+  createProposalBlockSchema,
+  updateProposalBlockSchema,
+  createContractBlockSchema,
+  updateContractBlockSchema,
   listBlocksSchema
 };

@@ -28,6 +28,16 @@ const {
   listWikiSchema,
   createWikiSchema,
   createWikiPageSchema,
+  listProposalsSchema,
+  listContractsSchema,
+  createProposalSchema,
+  updateProposalSchema,
+  createContractSchema,
+  updateContractSchema,
+  createProposalBlockSchema,
+  updateProposalBlockSchema,
+  createContractBlockSchema,
+  updateContractBlockSchema,
   listBlocksSchema
 } = require('./schemas');
 
@@ -175,6 +185,86 @@ async function startServer() {
 
   registerTool(
     server,
+    'plutio_list_proposals',
+    'List proposals in a Plutio business.',
+    listProposalsSchema,
+    tools.listProposals
+  );
+
+  registerTool(
+    server,
+    'plutio_list_contracts',
+    'List contracts in a Plutio business.',
+    listContractsSchema,
+    tools.listContracts
+  );
+
+  registerTool(
+    server,
+    'plutio_create_proposal',
+    'Create a proposal in Plutio. Uses the validated create payload field name `name`, not `title`.',
+    createProposalSchema,
+    tools.createProposal
+  );
+
+  registerTool(
+    server,
+    'plutio_update_proposal',
+    'Update an existing proposal in Plutio using canonical proposal record _id.',
+    updateProposalSchema,
+    tools.updateProposal
+  );
+
+  registerTool(
+    server,
+    'plutio_create_contract',
+    'Create a contract in Plutio. Uses the validated create payload field name `name`, not `title`.',
+    createContractSchema,
+    tools.createContract
+  );
+
+  registerTool(
+    server,
+    'plutio_update_contract',
+    'Update an existing contract in Plutio using canonical contract record _id.',
+    updateContractSchema,
+    tools.updateContract
+  );
+
+  registerTool(
+    server,
+    'plutio_create_proposal_block',
+    'Create a validated safe block on a proposal. Current MCP support intentionally limits writes to content/html/signature block types.',
+    createProposalBlockSchema,
+    tools.createProposalBlock
+  );
+
+  registerTool(
+    server,
+    'plutio_update_proposal_block',
+    'Update a validated safe proposal block. For embedded images, use HTML inside content/html blocks rather than claiming unresolved image-upload support.',
+    updateProposalBlockSchema,
+    tools.updateProposalBlock
+  );
+
+  registerTool(
+    server,
+    'plutio_create_contract_block',
+    'Create a validated safe block on a contract. Current MCP support intentionally limits writes to content/html/signature block types.',
+    createContractBlockSchema,
+    tools.createContractBlock
+  );
+
+  registerTool(
+    server,
+    'plutio_update_contract_block',
+    'Update a validated safe contract block. For embedded images, use HTML inside content/html blocks rather than claiming unresolved image-upload support.',
+    updateContractBlockSchema,
+    tools.updateContractBlock
+  );
+
+  registerTool(
+    server,
     'plutio_list_task_boards',
     'List task boards, optionally scoped by project.',
     listTaskBoardsSchema,
@@ -303,6 +393,16 @@ if (process.argv.includes('--self-test')) {
         'plutio_create_wiki',
         'plutio_create_wiki_page',
         'plutio_list_blocks',
+        'plutio_list_proposals',
+        'plutio_list_contracts',
+        'plutio_create_proposal',
+        'plutio_update_proposal',
+        'plutio_create_contract',
+        'plutio_update_contract',
+        'plutio_create_proposal_block',
+        'plutio_update_proposal_block',
+        'plutio_create_contract_block',
+        'plutio_update_contract_block',
         'plutio_list_task_boards',
         'plutio_list_task_groups',
         'plutio_list_tasks',
