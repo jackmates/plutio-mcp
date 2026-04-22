@@ -70,10 +70,24 @@ Optional:
 
 ## Run
 
+### Local stdio mode
+
 ```bash
 cd plutio-mcp
 node src/index.js
 ```
+
+### Local HTTP mode
+
+```bash
+cd plutio-mcp
+PORT=3000 npm run start:http
+```
+
+This exposes:
+- MCP endpoint: `http://localhost:3000/mcp`
+- health check: `http://localhost:3000/health`
+- readiness check: `http://localhost:3000/ready`
 
 Print tool names:
 
@@ -94,6 +108,8 @@ npm run self-test
 
 ## Example MCP client config
 
+### Stdio client config
+
 ```json
 {
   "mcpServers": {
@@ -109,6 +125,84 @@ npm run self-test
   }
 }
 ```
+
+### Remote HTTP deployment shape
+
+For team/shared hosting, run the server in HTTP mode and expose `/mcp` behind your platform or reverse proxy.
+
+Example service URL:
+
+```text
+https://plutio-mcp.example.com/mcp
+```
+
+## Coolify deployment
+
+This repository can now be deployed as a Coolify Docker service.
+
+### Recommended first deployment model
+
+- single shared MATES workspace
+- internal/private service only
+- secrets managed as Coolify environment variables
+- optionally place it behind Coolify auth / private networking
+
+### Required Coolify env vars
+
+- `PLUTIO_CLIENT_ID`
+- `PLUTIO_CLIENT_SECRET`
+- `PLUTIO_BUSINESS`
+
+### Optional env vars
+
+- `PLUTIO_API_BASE` (default `https://api.plutio.com/v1.11`)
+- `PLUTIO_USER_AGENT`
+- `PLUTIO_MCP_MODE` (`readonly` or `full`, default `readonly`)
+- `PORT` (default `3000`)
+- `MCP_PATH` (default `/mcp`)
+- `HOST` (default `0.0.0.0`)
+
+### Docker details
+
+- Dockerfile included
+- default container port: `3000`
+- health endpoint: `/health`
+- readiness endpoint: `/ready`
+- MCP endpoint: `/mcp`
+
+### Coolify setup notes
+
+Use:
+- **Build Pack / Dockerfile:** Dockerfile
+- **Port:** `3000`
+- **Healthcheck path:** `/health`
+
+### Team-safe mode
+
+By default, the service now starts in `readonly` mode.
+
+If you want the safer team-facing behavior explicitly, you can still set:
+
+```text
+PLUTIO_MCP_MODE=readonly
+```
+
+In `readonly` mode, the service exposes only safe read tools and hides write tools entirely.
+
+### Important security note
+
+In `full` mode, this server exposes both read and write Plutio tools. You must opt into that explicitly with:
+
+```text
+PLUTIO_MCP_MODE=full
+```
+Before broad team rollout, consider one or more of:
+
+- restricting network access to trusted internal users only
+- placing auth in front of the service
+- using `PLUTIO_MCP_MODE=readonly` for the team-facing deployment
+- reserving `full` mode for admin/internal power use
+- adding request logging/auditing
 
 ## Notes on task identity and safe writes
 

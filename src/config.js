@@ -8,13 +8,19 @@ function getEnv(name, fallback = undefined) {
   return value;
 }
 
+function normalizeMode(value) {
+  const normalized = String(value || 'readonly').trim().toLowerCase();
+  return normalized === 'full' ? 'full' : 'readonly';
+}
+
 function loadConfig() {
   return {
     apiBase: getEnv('PLUTIO_API_BASE', DEFAULT_API_BASE),
     clientId: getEnv('PLUTIO_CLIENT_ID'),
     clientSecret: getEnv('PLUTIO_CLIENT_SECRET'),
     business: getEnv('PLUTIO_BUSINESS'),
-    userAgent: getEnv('PLUTIO_USER_AGENT', 'plutio-mcp/0.1.0')
+    userAgent: getEnv('PLUTIO_USER_AGENT', 'plutio-mcp/0.1.0'),
+    mode: normalizeMode(getEnv('PLUTIO_MCP_MODE', 'readonly'))
   };
 }
 
@@ -32,5 +38,6 @@ function assertBaseConfig(config) {
 module.exports = {
   DEFAULT_API_BASE,
   loadConfig,
-  assertBaseConfig
+  assertBaseConfig,
+  normalizeMode
 };
