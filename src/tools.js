@@ -135,9 +135,61 @@ function createTools(client) {
       return client.request('businesses', { business });
     },
 
-    async findPeople({ search, skip, limit, business }) {
+    async findPeople({ search, personId, email, role, status, skip, limit, business }) {
+      const filter = {};
+      if (personId) {
+        filter._id = personId;
+      } else if (search) {
+        // Plutio people API ignores plain string q — it needs a JSON filter object.
+        // Try first name first, then last name if the search looks like it could be either.
+        const parts = search.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          // Full name search: match first name on first part, last name on last part
+          filter['name.first'] = { $regex: parts[0], $options: 'i' };
+          filter['name.last'] = { $regex: parts[parts.length - 1], $options: 'i' };
+        } else {
+          // Single word: search both first and last name (use $or-style via first match)
+          filter['name.first'] = { $regex: search.trim(), $options: 'i' };
+        }
+      }
+      if (email) filter['contactEmails.address'] = email;
+      if (role) filter.role = role;
+      if (status) filter.status = status;
+
+      // If we have a single-word search and it might also be a last name,
+      // do a second query and merge results
+      const baseQuery = pick({ skip, limit }, ['skip', 'limit']);
+
+      if (search && !personId) {
+        const parts = search.trim().split(/\s+/);
+        if (parts.length < 2) {
+          // Try both first and last name, merge unique results
+          const firstNameQuery = { ...baseQuery, q: JSON.stringify({ ...filter, 'name.first': { $regex: search.trim(), $options: 'i' } }) };
+          const lastNameFilter = { ...filter };
+          delete lastNameFilter['name.first'];
+          lastNameFilter['name.last'] = { $regex: search.trim(), $options: 'i' };
+          const lastNameQuery = { ...baseQuery, q: JSON.stringify(lastNameFilter) };
+
+          const [firstResults, lastResults] = await Promise.all([
+            client.request('people', { query: firstNameQuery, business }).catch(() => []),
+            client.request('people', { query: lastNameQuery, business }).catch(() => [])
+          ]);
+
+          const seen = new Set();
+          const merged = [];
+          for (const person of [...(Array.isArray(firstResults) ? firstResults : []), ...(Array.isArray(lastResults) ? lastResults : [])]) {
+            if (person && person._id && !seen.has(person._id)) {
+              seen.add(person._id);
+              merged.push(person);
+            }
+          }
+          return merged;
+        }
+      }
+
+      const q = Object.keys(filter).length ? JSON.stringify(filter) : undefined;
       return client.request('people', {
-        query: pick({ q: search, skip, limit }, ['q', 'skip', 'limit']),
+        query: pick({ q, ...baseQuery }, ['q', 'skip', 'limit']),
         business
       });
     },

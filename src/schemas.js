@@ -16,7 +16,11 @@ const getBusinessSchema = z.object({
 });
 
 const findPeopleSchema = z.object({
-  search: optionalString.describe('Free-text search for people.'),
+  search: optionalString.describe('Search by first name, last name, or full name. Converted to a Plutio name filter internally.'),
+  personId: optionalString.describe('Exact person record _id to look up.'),
+  email: optionalString.describe('Search by email address (exact match on contactEmails).'),
+  role: optionalString.describe('Filter by role, e.g. team, client, co-owner.'),
+  status: optionalString.describe('Filter by status, e.g. active, inactive.'),
   ...paging,
   ...businessOverride
 });
