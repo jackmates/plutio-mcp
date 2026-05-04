@@ -352,6 +352,71 @@ const listBlocksSchema = z.object({
   ...businessOverride
 });
 
+// ─── Escape-hatch tools ──────────────────────────────────────────────────────
+
+const apiReferenceSchema = z.object({
+  category: optionalString.describe(
+    "Optional category filter (e.g. 'crm', 'project-management', 'documents', 'communication', 'admin')."
+  ),
+  mode: z
+    .enum(['always', 'read', 'write'])
+    .optional()
+    .describe('Optional filter by tool mode: always (always shown), read (read tools), write (write tools).')
+});
+
+const requestSchema = z.object({
+  method: z
+    .enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'get', 'post', 'put', 'patch', 'delete'])
+    .default('GET')
+    .describe('HTTP method. Server enforces GET-only when PLUTIO_MCP_MODE=readonly.'),
+  path: z
+    .string()
+    .min(1)
+    .describe(
+      "API path relative to the configured Plutio API base. Example: 'people', 'projects/abc123', 'time-tracks'. Do NOT include the host."
+    ),
+  query: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Query string parameters. Object values are JSON-stringified into the URL — Plutio's `q` filter accepts this shape directly."
+    ),
+  body: z.unknown().optional().describe('Optional JSON body for POST/PUT/PATCH requests.'),
+  ...businessOverride
+});
+
+const workspaceSchemaSchema = z.object({
+  refresh: z
+    .boolean()
+    .optional()
+    .describe('If true, bypass the 5-minute cache and re-fetch custom fields.'),
+  ...businessOverride
+});
+
+const rateLimitStatusSchema = z.object({});
+
+// ─── Compound: client_360 ────────────────────────────────────────────────────
+
+const client360Schema = z
+  .object({
+    personId: optionalString.describe('Most direct: a Plutio person _id. Wins over email/name when set.'),
+    email: optionalString.describe('Email address. Looks up the person by contactEmails.email.'),
+    name: z
+      .object({
+        first: optionalString,
+        last: optionalString
+      })
+      .optional()
+      .describe('Partial name — first and/or last. Case-insensitive regex match.'),
+    includeProjects: z.boolean().optional().default(true),
+    includeInvoices: z.boolean().optional().default(true),
+    includeSubscriptions: z.boolean().optional().default(true),
+    ...businessOverride
+  })
+  .refine((data) => Boolean(data.personId || data.email || data.name), {
+    message: 'Provide one of personId, email, or name.{first,last}.'
+  });
+
 module.exports = {
   getBusinessSchema,
   findPeopleSchema,
@@ -386,5 +451,10 @@ module.exports = {
   updateProposalBlockSchema,
   createContractBlockSchema,
   updateContractBlockSchema,
-  listBlocksSchema
+  listBlocksSchema,
+  apiReferenceSchema,
+  requestSchema,
+  workspaceSchemaSchema,
+  rateLimitStatusSchema,
+  client360Schema
 };

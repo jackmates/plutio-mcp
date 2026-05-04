@@ -1,16 +1,38 @@
 const { URL } = require('node:url');
+const { RateLimiter } = require('./rate-limiter');
+
+const TOKEN_SAFETY_WINDOW_MS = 60_000;
 
 class PlutioClient {
   constructor(config) {
     this.config = config;
     this.tokenCache = null;
+    this.tokenInflight = null;
+    this.rateLimiter = new RateLimiter(config.maxRequestsPerHour || 1000);
+  }
+
+  getRateLimiter() {
+    return this.rateLimiter;
   }
 
   async getAccessToken() {
-    if (this.tokenCache && this.tokenCache.expiresAt > Date.now() + 30_000) {
+    if (
+      this.tokenCache &&
+      this.tokenCache.expiresAt - Date.now() > TOKEN_SAFETY_WINDOW_MS
+    ) {
       return this.tokenCache.accessToken;
     }
 
+    if (!this.tokenInflight) {
+      this.tokenInflight = this.refreshAccessToken().finally(() => {
+        this.tokenInflight = null;
+      });
+    }
+    const cache = await this.tokenInflight;
+    return cache.accessToken;
+  }
+
+  async refreshAccessToken() {
     const form = new URLSearchParams({
       client_id: this.config.clientId,
       client_secret: this.config.clientSecret,
@@ -37,10 +59,11 @@ class PlutioClient {
       accessToken: json.access_token,
       expiresAt: Date.now() + expiresInSeconds * 1000
     };
-    return this.tokenCache.accessToken;
+    return this.tokenCache;
   }
 
   async request(path, { method = 'GET', query, body, business } = {}) {
+    await this.rateLimiter.acquire();
     const accessToken = await this.getAccessToken();
     const url = new URL(path, this.config.apiBase.endsWith('/') ? this.config.apiBase : `${this.config.apiBase}/`);
 
