@@ -15,49 +15,50 @@ This is now a working **stdio MCP server** scaffold.
 
 Implemented so far:
 - config loading from env
-- OAuth client-credentials token retrieval
+- OAuth client-credentials token retrieval, with 60-second safety window and concurrent-call deduplication
+- token-bucket rate limiter (default 1000 req/hour) wired into every Plutio request
 - generic Plutio request wrapper
-- stdio MCP transport
+- stdio + Streamable HTTP MCP transports
 - task-result normalization that treats Plutio task `_id` as the canonical identity and exposes `legacyTaskNumber` as a secondary field
 - a safer task helper layer for exact placement resolution across project / board / group
-- MCP tools for:
-  - `plutio_healthcheck`
-  - `plutio_get_business`
-  - `plutio_find_people`
-  - `plutio_find_projects`
-  - `plutio_list_companies`
-  - `plutio_list_statuses`
-  - `plutio_list_custom_fields`
-  - `plutio_list_comments`
-  - `plutio_create_comment`
-  - `plutio_list_files`
-  - `plutio_list_conversations`
-  - `plutio_list_wiki`
-  - `plutio_create_wiki`
-  - `plutio_create_wiki_page`
-  - `plutio_list_blocks`
-  - `plutio_list_proposals`
-  - `plutio_list_contracts`
-  - `plutio_create_proposal`
-  - `plutio_update_proposal`
-  - `plutio_create_contract`
-  - `plutio_update_contract`
-  - `plutio_create_proposal_block`
-  - `plutio_update_proposal_block`
-  - `plutio_create_contract_block`
-  - `plutio_update_contract_block`
-  - `plutio_list_task_boards`
-  - `plutio_list_task_groups`
-  - `plutio_list_tasks`
-  - `plutio_list_time_tracks`
+
+### Tool catalog
+
+**Escape hatches** (always available, regardless of mode)
+  - `plutio_api_reference` — compact catalog of every tool, filterable by category/mode
+  - `plutio_request` — raw Plutio API passthrough; GET-only in `readonly` mode
+  - `plutio_workspace_schema` — custom-field introspection grouped by entityType (5-min cache)
+  - `plutio_rate_limit_status` — current rate-limit headroom
+
+**Compound**
+  - `plutio_client_360` — person + company + projects + invoices + subscriptions in one call
+
+**Read tools**
+  - `plutio_healthcheck`, `plutio_get_business`
+  - `plutio_find_people`, `plutio_find_projects`
+  - `plutio_list_companies`, `plutio_list_statuses`, `plutio_list_custom_fields`
+  - `plutio_list_comments`, `plutio_list_files`, `plutio_list_conversations`
+  - `plutio_list_wiki`, `plutio_list_blocks`
+  - `plutio_list_proposals`, `plutio_list_contracts`
+  - `plutio_list_task_boards`, `plutio_list_task_groups`, `plutio_list_tasks`, `plutio_list_time_tracks`
   - `plutio_get_task`
-  - `plutio_create_task`
-  - `plutio_create_task_safe`
-  - `plutio_update_task`
-  - `plutio_update_task_safe`
+
+**Write tools** (only registered when `PLUTIO_MCP_MODE=full`)
+  - `plutio_create_comment`
+  - `plutio_create_wiki`, `plutio_create_wiki_page`
+  - `plutio_create_proposal`, `plutio_update_proposal`
+  - `plutio_create_contract`, `plutio_update_contract`
+  - `plutio_create_proposal_block`, `plutio_update_proposal_block`
+  - `plutio_create_contract_block`, `plutio_update_contract_block`
+  - `plutio_create_task`, `plutio_create_task_safe`
+  - `plutio_update_task`, `plutio_update_task_safe`
   - `plutio_create_tasks_bulk`
 
+> Use `plutio_api_reference` from any MCP client to get the live, filterable version of this list.
+
 ## Environment
+
+See [`.env.example`](.env.example) for the full list with comments.
 
 Required:
 - `PLUTIO_CLIENT_ID`
@@ -65,8 +66,10 @@ Required:
 - `PLUTIO_BUSINESS`
 
 Optional:
+- `PLUTIO_MCP_MODE` (`readonly` | `full`, default `readonly`)
 - `PLUTIO_API_BASE` (defaults to `https://api.plutio.com/v1.11`)
 - `PLUTIO_USER_AGENT`
+- `PLUTIO_MAX_REQUESTS_PER_HOUR` (default `1000`)
 
 ## Run
 

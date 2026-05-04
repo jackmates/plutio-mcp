@@ -5,6 +5,8 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { loadConfig, assertBaseConfig } = require('./config');
 const { PlutioClient } = require('./client');
 const { createTools } = require('./tools');
+const { buildTools: buildEscapeHatchTools } = require('./escape-hatch');
+const { createClient360 } = require('./client-360');
 const {
   getBusinessSchema,
   findPeopleSchema,
@@ -39,7 +41,12 @@ const {
   updateProposalBlockSchema,
   createContractBlockSchema,
   updateContractBlockSchema,
-  listBlocksSchema
+  listBlocksSchema,
+  apiReferenceSchema,
+  requestSchema,
+  workspaceSchemaSchema,
+  rateLimitStatusSchema,
+  client360Schema
 } = require('./schemas');
 
 function toTextContent(data) {
@@ -60,11 +67,47 @@ function registerTool(server, name, description, schema, handler) {
   });
 }
 
-function buildMcpServer(config, client, tools) {
+function buildMcpServer(config, client, tools, extras) {
   const server = new McpServer({
     name: 'plutio-mcp',
-    version: '0.1.0'
+    version: '0.2.0'
   });
+
+  const escapeHatchTools = [
+    [
+      'plutio_api_reference',
+      'Compact catalog of every tool this server exposes — name, category, API path, mode. Call this FIRST when unsure which Plutio tool to use.',
+      apiReferenceSchema,
+      extras.escape.apiReference
+    ],
+    [
+      'plutio_request',
+      'Escape hatch — raw passthrough to the Plutio API. Method/path/query/body. Use when the resource-specific tools do not cover what you need. GET-only when PLUTIO_MCP_MODE=readonly.',
+      requestSchema,
+      extras.escape.request
+    ],
+    [
+      'plutio_workspace_schema',
+      'Inspect custom-field definitions for the current Plutio business, grouped by entityType. Returns { entityType: { fieldTitle: { _id, inputType, options } } }. Cached for 5 minutes; pass refresh:true to force a re-fetch.',
+      workspaceSchemaSchema,
+      extras.escape.workspaceSchema
+    ],
+    [
+      'plutio_rate_limit_status',
+      'Show remaining requests in the current rate-limit window (token-bucket capped at PLUTIO_MAX_REQUESTS_PER_HOUR, default 1000/hour).',
+      rateLimitStatusSchema,
+      extras.escape.rateLimitStatus
+    ]
+  ];
+
+  const compoundTools = [
+    [
+      'plutio_client_360',
+      'Compound lookup — resolves a person by id/email/name, then fetches their company, projects, invoices (with paid/unpaid totals), and recurring subscriptions in one call. Replaces the 4-6 round-trip "tell me everything about <client>" workflow.',
+      client360Schema,
+      extras.client360
+    ]
+  ];
 
   const readTools = [
     ['plutio_get_business', 'Get the current Plutio business/workspace details.', getBusinessSchema, tools.getBusiness],
@@ -106,6 +149,14 @@ function buildMcpServer(config, client, tools) {
     ['plutio_create_tasks_bulk', 'Create multiple tasks in Plutio with per-item results.', createTasksBulkSchema, tools.createTasksBulk]
   ];
 
+  for (const [name, description, schema, handler] of escapeHatchTools) {
+    registerTool(server, name, description, schema, handler);
+  }
+
+  for (const [name, description, schema, handler] of compoundTools) {
+    registerTool(server, name, description, schema, handler);
+  }
+
   for (const [name, description, schema, handler] of readTools) {
     registerTool(server, name, description, schema, handler);
   }
@@ -134,12 +185,16 @@ function createAppContext() {
   assertBaseConfig(config);
   const client = new PlutioClient(config);
   const tools = createTools(client);
-  const server = buildMcpServer(config, client, tools);
-  return { config, client, tools, server };
+  const extras = {
+    escape: buildEscapeHatchTools(client, config),
+    client360: createClient360(client)
+  };
+  const server = buildMcpServer(config, client, tools, extras);
+  return { config, client, tools, extras, server };
 }
 
 async function startHttpServer() {
-  const { config, server } = createAppContext();
+  const { config, client, server } = createAppContext();
   const port = Number(process.env.PORT || process.env.PLUTIO_MCP_PORT || 3000);
   const host = process.env.HOST || process.env.PLUTIO_MCP_HOST || '0.0.0.0';
   const path = process.env.MCP_PATH || '/mcp';
@@ -150,14 +205,21 @@ async function startHttpServer() {
 
       if (req.method === 'GET' && url.pathname === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, service: 'plutio-mcp', business: config.business, mode: config.mode }));
+        res.end(JSON.stringify({ ok: true, service: 'plutio-mcp', business: config.business, mode: config.mode, version: '0.2.0' }));
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/ready') {
-        await server.server.listTools();
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
+        // Probe Plutio's OAuth endpoint as a real readiness signal.
+        try {
+          await client.getAccessToken();
+          const rl = client.getRateLimiter().status();
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, business: config.business, mode: config.mode, rateLimit: rl }));
+        } catch (error) {
+          res.writeHead(503, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: error.message || String(error) }));
+        }
         return;
       }
 

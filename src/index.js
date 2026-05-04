@@ -20,6 +20,14 @@ if (process.argv.includes('--self-test')) {
   console.log(
     JSON.stringify(
       [
+        // escape hatches
+        'plutio_api_reference',
+        'plutio_request',
+        'plutio_workspace_schema',
+        'plutio_rate_limit_status',
+        // compound
+        'plutio_client_360',
+        // existing
         'plutio_healthcheck',
         'plutio_get_business',
         'plutio_find_people',

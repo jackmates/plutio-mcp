@@ -13,14 +13,21 @@ function normalizeMode(value) {
   return normalized === 'full' ? 'full' : 'readonly';
 }
 
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
 function loadConfig() {
   return {
     apiBase: getEnv('PLUTIO_API_BASE', DEFAULT_API_BASE),
     clientId: getEnv('PLUTIO_CLIENT_ID'),
     clientSecret: getEnv('PLUTIO_CLIENT_SECRET'),
     business: getEnv('PLUTIO_BUSINESS'),
-    userAgent: getEnv('PLUTIO_USER_AGENT', 'plutio-mcp/0.1.0'),
-    mode: normalizeMode(getEnv('PLUTIO_MCP_MODE', 'readonly'))
+    userAgent: getEnv('PLUTIO_USER_AGENT', 'plutio-mcp/0.2.0'),
+    mode: normalizeMode(getEnv('PLUTIO_MCP_MODE', 'readonly')),
+    maxRequestsPerHour: parsePositiveInt(getEnv('PLUTIO_MAX_REQUESTS_PER_HOUR'), 1000)
   };
 }
 
