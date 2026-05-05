@@ -200,6 +200,9 @@ async function startHttpServer() {
   const host = process.env.HOST || process.env.PLUTIO_MCP_HOST || '0.0.0.0';
   const path = process.env.MCP_PATH || '/mcp';
 
+  // sessionId -> StreamableHTTPServerTransport
+  const mcpTransports = new Map();
+
   const httpServer = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -263,15 +266,29 @@ async function startHttpServer() {
         return;
       }
 
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID()
-      });
+      // Reuse one StreamableHTTPServerTransport per session so that the
+      // initialize / tools/list / tools/call sequence within a session shares
+      // state. Without this, every request gets a fresh transport (with a
+      // fresh session id) and any post-initialize call fails with
+      // "Bad Request: Server not initialized" — which is what was causing
+      // Cowork's tool list to come back empty.
+      const incomingSession = req.headers['mcp-session-id'];
+      let transport;
+      if (typeof incomingSession === 'string' && mcpTransports.has(incomingSession)) {
+        transport = mcpTransports.get(incomingSession);
+      } else {
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (id) => {
+            mcpTransports.set(id, transport);
+          }
+        });
+        transport.onclose = () => {
+          if (transport.sessionId) mcpTransports.delete(transport.sessionId);
+        };
+        await server.connect(transport);
+      }
 
-      res.on('close', () => {
-        transport.close().catch(() => {});
-      });
-
-      await server.connect(transport);
       await transport.handleRequest(req, res);
     } catch (error) {
       if (!res.headersSent) {
