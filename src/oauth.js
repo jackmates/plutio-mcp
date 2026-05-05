@@ -101,7 +101,7 @@ function getAuthorizationServerMetadata(baseUrl) {
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code'],
     code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['none'],
+    token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['mcp']
   };
 }
@@ -117,14 +117,18 @@ function getProtectedResourceMetadata(baseUrl) {
 
 async function handleRegister(req, res) {
   const body = await readBody(req).catch(() => null);
+  console.log('[oauth/register] body:', String(body || '').slice(0, 800));
   let parsed;
   try {
     parsed = parseFormOrJson(body, req.headers['content-type'] || '');
   } catch (error) {
+    console.log('[oauth/register] parse error:', error.message);
     return jsonResponse(res, 400, { error: 'invalid_client_metadata', error_description: 'Invalid JSON body' });
   }
   const redirectUris = Array.isArray(parsed.redirect_uris) ? parsed.redirect_uris.map(String) : [];
+  console.log('[oauth/register] redirect_uris:', JSON.stringify(redirectUris), 'client_name:', parsed.client_name);
   if (redirectUris.length === 0) {
+    console.log('[oauth/register] reject: empty redirect_uris');
     return jsonResponse(res, 400, { error: 'invalid_redirect_uri', error_description: 'redirect_uris is required' });
   }
 
@@ -177,13 +181,16 @@ async function handleAuthorize(req, res, url, opts) {
   const scope = params.get('scope') || 'mcp';
   const passcode = params.get('passcode');
   const requirePasscode = Boolean(opts && opts.passcode);
+  console.log('[oauth/authorize] client_id:', clientId, 'redirect_uri:', redirectUri, 'response_type:', responseType, 'method:', codeChallengeMethod, 'scope:', scope, 'has_challenge:', Boolean(codeChallenge));
 
   // Validate client + redirect_uri before bouncing to it
   const clientRecord = clients.get(clientId || '');
   if (!clientRecord) {
+    console.log('[oauth/authorize] reject: unknown client_id; known=', Array.from(clients.keys()).slice(0, 5));
     return jsonResponse(res, 400, { error: 'invalid_client', error_description: 'Unknown client_id' });
   }
   if (!redirectUri || !clientRecord.redirectUris.includes(redirectUri)) {
+    console.log('[oauth/authorize] reject: redirect_uri mismatch. registered=', JSON.stringify(clientRecord.redirectUris), 'requested=', redirectUri);
     return jsonResponse(res, 400, { error: 'invalid_redirect_uri', error_description: 'redirect_uri mismatch' });
   }
 
@@ -252,6 +259,7 @@ button{margin-top:1rem;padding:.6rem 1rem;font-size:1rem;background:#111;color:#
 async function handleToken(req, res) {
   purgeExpired();
   const body = await readBody(req).catch(() => '');
+  console.log('[oauth/token] content-type:', req.headers['content-type'], 'auth-header:', req.headers.authorization ? 'present' : 'absent', 'body:', String(body || '').slice(0, 400));
   let params;
   try {
     params = parseFormOrJson(body, req.headers['content-type'] || '');
@@ -259,7 +267,23 @@ async function handleToken(req, res) {
     return jsonResponse(res, 400, { error: 'invalid_request', error_description: 'Invalid body' });
   }
 
+  // Some clients send credentials via HTTP Basic on the token endpoint
+  // (token_endpoint_auth_method=client_secret_basic). Decode that into
+  // params so we accept both styles.
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.toLowerCase().startsWith('basic ')) {
+    try {
+      const decoded = Buffer.from(authHeader.slice(6).trim(), 'base64').toString('utf8');
+      const idx = decoded.indexOf(':');
+      if (idx > 0) {
+        params.client_id = params.client_id || decoded.slice(0, idx);
+        params.client_secret = params.client_secret || decoded.slice(idx + 1);
+      }
+    } catch { /* ignore */ }
+  }
+
   const grantType = params.grant_type;
+  console.log('[oauth/token] grant_type:', grantType, 'client_id:', params.client_id, 'has_verifier:', Boolean(params.code_verifier));
   if (grantType !== 'authorization_code') {
     return jsonResponse(res, 400, { error: 'unsupported_grant_type' });
   }
