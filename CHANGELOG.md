@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented here.
 
+## [0.3.0] - 2026-05-04
+
+### Added
+
+- **OAuth 2.1 authorization on the MCP endpoint.** Required for spec-compliant clients like Claude desktop / Cowork that drive remote MCP servers. Includes:
+  - `/.well-known/oauth-authorization-server` (RFC 8414) — issuer + endpoint discovery
+  - `/.well-known/oauth-protected-resource` (RFC 9728) — resource metadata
+  - `POST /oauth/register` — RFC 7591 dynamic client registration
+  - `GET  /oauth/authorize` — `authorization_code` grant with PKCE (S256 required)
+  - `POST /oauth/token` — code-for-token exchange
+  - `WWW-Authenticate: Bearer resource_metadata=...` on 401 from `/mcp` so MCP clients auto-discover the auth flow
+- **Optional consent-page passcode** (`MCP_AUTH_PASSCODE`). When set, the `/authorize` step renders a tiny HTML form requiring the user to enter the passcode before a code is issued. When unset, registered clients are auto-approved.
+- New env vars: `MCP_OAUTH_ENABLED` (default `true`), `MCP_AUTH_PASSCODE` (optional).
+
+### Changed
+
+- `/mcp` now returns `401 Unauthorized` (with the discovery hint) when no bearer token is present and `MCP_OAUTH_ENABLED` is true. Existing local stdio usage and the in-process `createAppContext()` flow are unaffected.
+- `/health` reports `oauth: true|false`.
+- Server name version reported via MCP advertised as `0.3.0`.
+
+### Migration
+
+- If you previously fronted this server with HTTP Basic Auth at the proxy layer (Coolify, Cloudflare, etc.) and want to keep that, set `MCP_OAUTH_ENABLED=false` to disable the in-app gate.
+- If you want OAuth (recommended for remote MCP clients), make sure no proxy-level auth is in front of the server, or it'll block the OAuth flow's discovery endpoints.
+
 ## [0.2.0] - 2026-05-04
 
 ### Added

@@ -25,9 +25,17 @@ function loadConfig() {
     clientId: getEnv('PLUTIO_CLIENT_ID'),
     clientSecret: getEnv('PLUTIO_CLIENT_SECRET'),
     business: getEnv('PLUTIO_BUSINESS'),
-    userAgent: getEnv('PLUTIO_USER_AGENT', 'plutio-mcp/0.2.0'),
+    userAgent: getEnv('PLUTIO_USER_AGENT', 'plutio-mcp/0.3.0'),
     mode: normalizeMode(getEnv('PLUTIO_MCP_MODE', 'readonly')),
-    maxRequestsPerHour: parsePositiveInt(getEnv('PLUTIO_MAX_REQUESTS_PER_HOUR'), 1000)
+    maxRequestsPerHour: parsePositiveInt(getEnv('PLUTIO_MAX_REQUESTS_PER_HOUR'), 1000),
+    // Optional OAuth consent passcode. If unset, /authorize auto-approves any
+    // registered client. If set, the user has to type it into a small consent
+    // page during the OAuth flow.
+    authPasscode: getEnv('MCP_AUTH_PASSCODE') || null,
+    // If true, /mcp requires a valid OAuth bearer token. Default true. Set to
+    // 'false' if a layer in front (Cloudflare Access, basic auth proxy, etc.)
+    // is already gating the endpoint.
+    oauthEnabled: String(getEnv('MCP_OAUTH_ENABLED', 'true')).toLowerCase() !== 'false'
   };
 }
 

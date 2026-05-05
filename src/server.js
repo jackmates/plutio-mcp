@@ -7,6 +7,7 @@ const { PlutioClient } = require('./client');
 const { createTools } = require('./tools');
 const { buildTools: buildEscapeHatchTools } = require('./escape-hatch');
 const { createClient360 } = require('./client-360');
+const oauth = require('./oauth');
 const {
   getBusinessSchema,
   findPeopleSchema,
@@ -70,7 +71,7 @@ function registerTool(server, name, description, schema, handler) {
 function buildMcpServer(config, client, tools, extras) {
   const server = new McpServer({
     name: 'plutio-mcp',
-    version: '0.2.0'
+    version: '0.3.0'
   });
 
   const escapeHatchTools = [
@@ -202,10 +203,11 @@ async function startHttpServer() {
   const httpServer = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      const baseUrl = oauth.publicBaseUrl(req);
 
       if (req.method === 'GET' && url.pathname === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, service: 'plutio-mcp', business: config.business, mode: config.mode, version: '0.2.0' }));
+        res.end(JSON.stringify({ ok: true, service: 'plutio-mcp', business: config.business, mode: config.mode, version: '0.3.0', oauth: config.oauthEnabled }));
         return;
       }
 
@@ -223,9 +225,41 @@ async function startHttpServer() {
         return;
       }
 
+      // ─── OAuth endpoints (always reachable, never bearer-gated) ──────────
+      if (req.method === 'GET' && url.pathname === '/.well-known/oauth-authorization-server') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(oauth.getAuthorizationServerMetadata(baseUrl)));
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/.well-known/oauth-protected-resource') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(oauth.getProtectedResourceMetadata(baseUrl)));
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/oauth/register') {
+        await oauth.handleRegister(req, res);
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/oauth/authorize') {
+        await oauth.handleAuthorize(req, res, url, { passcode: config.authPasscode });
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/oauth/token') {
+        await oauth.handleToken(req, res);
+        return;
+      }
+
       if (url.pathname !== path) {
         res.writeHead(404, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
+        return;
+      }
+
+      // Bearer-token gate on the MCP endpoint itself. Returning 401 with a
+      // RFC-compliant WWW-Authenticate is what triggers MCP clients (Claude
+      // desktop / Cowork / etc.) to discover and run the OAuth flow.
+      if (config.oauthEnabled && !oauth.isAuthorized(req)) {
+        oauth.unauthorizedResponse(res, baseUrl);
         return;
       }
 
