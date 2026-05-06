@@ -68,7 +68,8 @@ if (process.argv.includes('--self-test')) {
         'plutio_move_task_group',
         'plutio_copy_task_group',
         'plutio_archive_task_group',
-        'plutio_delete_task_group'
+        'plutio_delete_task_group',
+        'plutio_delete_task'
       ],
       null,
       2

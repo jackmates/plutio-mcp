@@ -65,7 +65,8 @@ const TOOL_CATALOG = [
   { tool: 'plutio_move_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/move', description: 'Reorder a task group within a board (or move to another board).' },
   { tool: 'plutio_copy_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/copy', description: 'Duplicate a task group to a destination board.' },
   { tool: 'plutio_archive_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/archive', description: 'Archive or unarchive a task group.' },
-  { tool: 'plutio_delete_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups', description: 'Permanently delete a task group. Cannot be undone.' }
+  { tool: 'plutio_delete_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups', description: 'Permanently delete a task group. Cannot be undone.' },
+  { tool: 'plutio_delete_task', mode: 'write', category: 'project-management', apiPath: 'tasks', description: 'Permanently delete a task by canonical _id. DELETE /tasks with {_id} in body. Cannot be undone.' }
 ];
 
 const PATH_RE = /^[A-Za-z0-9_\-./{}~]+$/;

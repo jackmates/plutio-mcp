@@ -402,6 +402,15 @@ const deleteTaskGroupSchema = z.object({
   ...businessOverride
 });
 
+const deleteTaskSchema = z.object({
+  taskRecordId: optionalString.describe('Canonical task record _id to permanently delete.'),
+  taskId: optionalString.describe('Legacy alias for taskRecordId. Prefer taskRecordId.'),
+  ...businessOverride
+}).refine(
+  (data) => Boolean(data.taskRecordId || data.taskId),
+  { message: 'deleteTask requires taskRecordId (canonical task _id).' }
+);
+
 // ─── Escape-hatch tools ──────────────────────────────────────────────────────
 
 const apiReferenceSchema = z.object({
@@ -512,5 +521,6 @@ module.exports = {
   moveTaskGroupSchema,
   copyTaskGroupSchema,
   archiveTaskGroupSchema,
-  deleteTaskGroupSchema
+  deleteTaskGroupSchema,
+  deleteTaskSchema
 };

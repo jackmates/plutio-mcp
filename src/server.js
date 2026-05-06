@@ -53,7 +53,8 @@ const {
   moveTaskGroupSchema,
   copyTaskGroupSchema,
   archiveTaskGroupSchema,
-  deleteTaskGroupSchema
+  deleteTaskGroupSchema,
+  deleteTaskSchema
 } = require('./schemas');
 
 function toTextContent(data) {
@@ -89,7 +90,7 @@ function buildMcpServer(config, client, tools, extras) {
     ],
     [
       'plutio_request',
-      'Escape hatch — raw passthrough to the Plutio API. Method/path/query/body. Use when the resource-specific tools do not cover what you need. GET-only when PLUTIO_MCP_MODE=readonly.',
+      "Escape hatch — raw passthrough to the Plutio API. Method/path/query/body. Use when the resource-specific tools do not cover what you need.\n\nPlutio conventions to know:\n- Writes use JSON bodies (Content-Type is set automatically for POST/PUT/PATCH).\n- DELETE is `DELETE /<resource>` with `{_id}` in the body — NOT `DELETE /<resource>/{id}` (Plutio returns 403 for the path-based form).\n- Archive endpoints exist for some resources (e.g. POST /task-groups/archive) but not all (POST /tasks/archive 404s; toggle isArchived via PUT /tasks instead).\n\nGET-only when PLUTIO_MCP_MODE=readonly.",
       requestSchema,
       extras.escape.request
     ],
@@ -159,7 +160,8 @@ function buildMcpServer(config, client, tools, extras) {
     ['plutio_move_task_group', 'Move a task group to a new position within a task board (or to a different board). Useful for reordering columns.', moveTaskGroupSchema, tools.moveTaskGroup],
     ['plutio_copy_task_group', 'Duplicate a task group (and its content) to a destination board at the given position.', copyTaskGroupSchema, tools.copyTaskGroup],
     ['plutio_archive_task_group', 'Archive a task group (hides from main views, data retained) or unarchive it. Pass isArchived=true to archive, false to restore.', archiveTaskGroupSchema, tools.archiveTaskGroup],
-    ['plutio_delete_task_group', 'Permanently delete a task group. Cannot be undone.', deleteTaskGroupSchema, tools.deleteTaskGroup]
+    ['plutio_delete_task_group', 'Permanently delete a task group. Cannot be undone.', deleteTaskGroupSchema, tools.deleteTaskGroup],
+    ['plutio_delete_task', 'Permanently delete a task by canonical task record _id. Cannot be undone. Calls DELETE /tasks with {_id} in the body (Plutio does not support DELETE /tasks/{id}).', deleteTaskSchema, tools.deleteTask]
   ];
 
   for (const [name, description, schema, handler] of escapeHatchTools) {

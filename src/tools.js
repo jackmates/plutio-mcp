@@ -701,6 +701,22 @@ function createTools(client) {
         business,
         body: { _id }
       });
+    },
+
+    async deleteTask({ taskRecordId, taskId, business }) {
+      // Plutio's DELETE convention is `DELETE /<resource>` with `{_id}` in
+      // the body — not `DELETE /<resource>/{id}` (which returns 403). Mirrors
+      // the pattern used by deleteTaskGroup.
+      const canonicalTaskId = taskRecordId || taskId;
+      if (!canonicalTaskId) {
+        throw new Error('deleteTask requires taskRecordId (canonical task _id).');
+      }
+      const result = await client.request('tasks', {
+        method: 'DELETE',
+        business,
+        body: { _id: canonicalTaskId }
+      });
+      return normalizeTaskResult(result);
     }
   };
 }
