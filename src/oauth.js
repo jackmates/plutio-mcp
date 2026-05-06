@@ -18,13 +18,65 @@
  */
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 min
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 h
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-const clients = new Map(); // clientId -> { clientSecret, redirectUris, registeredAt }
+const clients = new Map(); // clientId -> { clientSecret, redirectUris, registeredAt, tokenEndpointAuthMethod, clientName }
 const codes = new Map(); // code -> { clientId, redirectUri, codeChallenge, codeChallengeMethod, scope, expiresAt }
 const tokens = new Map(); // accessToken -> { clientId, scope, expiresAt }
+const refreshTokens = new Map(); // refreshToken -> { clientId, scope, expiresAt }
+
+// ─── Disk persistence (so OAuth state survives container redeploys) ─────────
+//
+// Tiny JSON file keyed by Map name. Codes are excluded — they are short-lived
+// and a redeploy mid-flow is acceptable to fail.
+const STORE_DIR = process.env.MCP_OAUTH_STORE_DIR || '/data';
+const STORE_FILE = path.join(STORE_DIR, 'oauth.json');
+let saveTimer = null;
+
+function loadFromDisk() {
+  try {
+    const raw = fs.readFileSync(STORE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    for (const [k, v] of Object.entries(parsed.clients || {})) clients.set(k, v);
+    for (const [k, v] of Object.entries(parsed.tokens || {})) tokens.set(k, v);
+    for (const [k, v] of Object.entries(parsed.refreshTokens || {})) refreshTokens.set(k, v);
+    console.log(`[oauth/store] loaded clients=${clients.size} tokens=${tokens.size} refresh=${refreshTokens.size} from ${STORE_FILE}`);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      console.log(`[oauth/store] no existing state at ${STORE_FILE} — starting empty`);
+    } else {
+      console.log(`[oauth/store] load failed (${error.message}) — starting empty`);
+    }
+  }
+}
+
+function persistSoon() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(persistNow, 250);
+}
+
+function persistNow() {
+  saveTimer = null;
+  try {
+    fs.mkdirSync(STORE_DIR, { recursive: true });
+    const payload = {
+      clients: Object.fromEntries(clients),
+      tokens: Object.fromEntries(tokens),
+      refreshTokens: Object.fromEntries(refreshTokens),
+      savedAt: Date.now()
+    };
+    fs.writeFileSync(STORE_FILE, JSON.stringify(payload), { mode: 0o600 });
+  } catch (error) {
+    console.log(`[oauth/store] save failed: ${error.message}`);
+  }
+}
+
+loadFromDisk();
 
 function randomToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString('base64url');
@@ -32,8 +84,21 @@ function randomToken(bytes = 32) {
 
 function purgeExpired() {
   const now = Date.now();
+  let dirty = false;
   for (const [k, v] of codes) if (v.expiresAt < now) codes.delete(k);
-  for (const [k, v] of tokens) if (v.expiresAt < now) tokens.delete(k);
+  for (const [k, v] of tokens) {
+    if (v.expiresAt < now) {
+      tokens.delete(k);
+      dirty = true;
+    }
+  }
+  for (const [k, v] of refreshTokens) {
+    if (v.expiresAt < now) {
+      refreshTokens.delete(k);
+      dirty = true;
+    }
+  }
+  if (dirty) persistSoon();
 }
 
 function readBody(req, limit = 64 * 1024) {
@@ -99,7 +164,7 @@ function getAuthorizationServerMetadata(baseUrl) {
     registration_endpoint: `${baseUrl}/oauth/register`,
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     scopes_supported: ['mcp']
@@ -135,24 +200,33 @@ async function handleRegister(req, res) {
   const clientId = randomToken(16);
   const clientSecret = randomToken(32);
   const now = Math.floor(Date.now() / 1000);
+  // Honor the client's requested auth method when supported. Default to
+  // 'none' for public PKCE clients.
+  const requestedAuthMethod = String(parsed.token_endpoint_auth_method || 'none');
+  const acceptedAuthMethods = new Set(['none', 'client_secret_basic', 'client_secret_post']);
+  const tokenEndpointAuthMethod = acceptedAuthMethods.has(requestedAuthMethod) ? requestedAuthMethod : 'none';
+
   clients.set(clientId, {
     clientSecret,
     redirectUris,
     registeredAt: now,
-    clientName: parsed.client_name || null
+    clientName: parsed.client_name || null,
+    tokenEndpointAuthMethod
   });
+  persistSoon();
 
   jsonResponse(res, 201, {
     client_id: clientId,
     client_secret: clientSecret,
     client_id_issued_at: now,
     redirect_uris: redirectUris,
-    grant_types: ['authorization_code'],
+    grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
-    token_endpoint_auth_method: 'none',
+    token_endpoint_auth_method: tokenEndpointAuthMethod,
     scope: 'mcp',
     client_name: parsed.client_name || undefined
   });
+  console.log('[oauth/register] OK client_id=', clientId, 'auth_method=', tokenEndpointAuthMethod);
 }
 
 function redirectWithError(res, redirectUri, state, error, description) {
@@ -283,8 +357,13 @@ async function handleToken(req, res) {
   }
 
   const grantType = params.grant_type;
-  console.log('[oauth/token] grant_type:', grantType, 'client_id:', params.client_id, 'has_verifier:', Boolean(params.code_verifier));
+  console.log('[oauth/token] grant_type:', grantType, 'client_id:', params.client_id, 'has_verifier:', Boolean(params.code_verifier), 'has_refresh:', Boolean(params.refresh_token));
+
+  if (grantType === 'refresh_token') {
+    return handleRefreshGrant(res, params);
+  }
   if (grantType !== 'authorization_code') {
+    console.log('[oauth/token] reject: unsupported grant_type', grantType);
     return jsonResponse(res, 400, { error: 'unsupported_grant_type' });
   }
 
@@ -295,14 +374,17 @@ async function handleToken(req, res) {
 
   const stored = code ? codes.get(code) : null;
   if (!stored) {
+    console.log('[oauth/token] reject: unknown_or_expired code; codes_alive=', codes.size);
     return jsonResponse(res, 400, { error: 'invalid_grant', error_description: 'Unknown or expired code' });
   }
   codes.delete(code); // single-use regardless of outcome
 
   if (stored.clientId !== clientId) {
+    console.log('[oauth/token] reject: clientId mismatch stored=', stored.clientId, 'incoming=', clientId);
     return jsonResponse(res, 400, { error: 'invalid_client' });
   }
   if (stored.redirectUri !== redirectUri) {
+    console.log('[oauth/token] reject: redirect_uri mismatch stored=', stored.redirectUri, 'incoming=', redirectUri);
     return jsonResponse(res, 400, { error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
   }
 
@@ -311,17 +393,55 @@ async function handleToken(req, res) {
     .update(codeVerifier || '')
     .digest('base64url');
   if (expectedHash !== stored.codeChallenge) {
+    console.log('[oauth/token] reject: PKCE failed expected=', stored.codeChallenge.slice(0, 8), 'got=', expectedHash.slice(0, 8));
     return jsonResponse(res, 400, { error: 'invalid_grant', error_description: 'PKCE verification failed' });
   }
 
   const accessToken = randomToken(32);
+  const refreshToken = randomToken(32);
   const expiresAt = Date.now() + TOKEN_TTL_MS;
+  const refreshExpiresAt = Date.now() + REFRESH_TTL_MS;
   tokens.set(accessToken, { clientId, scope: stored.scope, expiresAt });
+  refreshTokens.set(refreshToken, { clientId, scope: stored.scope, expiresAt: refreshExpiresAt });
+  persistSoon();
 
+  console.log('[oauth/token] OK access_token issued for client_id=', clientId, 'scope=', stored.scope);
   jsonResponse(res, 200, {
     access_token: accessToken,
     token_type: 'Bearer',
     expires_in: Math.floor(TOKEN_TTL_MS / 1000),
+    refresh_token: refreshToken,
+    scope: stored.scope
+  });
+}
+
+function handleRefreshGrant(res, params) {
+  const refreshToken = params.refresh_token;
+  const stored = refreshToken ? refreshTokens.get(refreshToken) : null;
+  if (!stored) {
+    console.log('[oauth/token] refresh reject: unknown_or_expired refresh_token');
+    return jsonResponse(res, 400, { error: 'invalid_grant', error_description: 'Unknown or expired refresh_token' });
+  }
+  if (stored.expiresAt < Date.now()) {
+    refreshTokens.delete(refreshToken);
+    persistSoon();
+    return jsonResponse(res, 400, { error: 'invalid_grant', error_description: 'Refresh token expired' });
+  }
+  // Rotate the refresh token (more secure than reusing).
+  refreshTokens.delete(refreshToken);
+  const newAccess = randomToken(32);
+  const newRefresh = randomToken(32);
+  const accessExpiresAt = Date.now() + TOKEN_TTL_MS;
+  const refreshExpiresAt = Date.now() + REFRESH_TTL_MS;
+  tokens.set(newAccess, { clientId: stored.clientId, scope: stored.scope, expiresAt: accessExpiresAt });
+  refreshTokens.set(newRefresh, { clientId: stored.clientId, scope: stored.scope, expiresAt: refreshExpiresAt });
+  persistSoon();
+  console.log('[oauth/token] refresh OK new access_token issued for client_id=', stored.clientId);
+  return jsonResponse(res, 200, {
+    access_token: newAccess,
+    token_type: 'Bearer',
+    expires_in: Math.floor(TOKEN_TTL_MS / 1000),
+    refresh_token: newRefresh,
     scope: stored.scope
   });
 }
