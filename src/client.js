@@ -81,14 +81,22 @@ class PlutioClient {
       accept: 'application/json'
     };
 
+    // Always set Content-Type: application/json for write methods so Plutio's
+    // API doesn't 400 with an HTML error when the body is empty or when only
+    // a path-style write is intended. Body defaults to {} for write methods.
+    const upperMethod = String(method || 'GET').toUpperCase();
+    const writeMethods = new Set(['POST', 'PUT', 'PATCH']);
     let payload;
-    if (body !== undefined) {
+    if (writeMethods.has(upperMethod)) {
+      headers['content-type'] = 'application/json';
+      payload = JSON.stringify(body !== undefined ? body : {});
+    } else if (body !== undefined) {
       headers['content-type'] = 'application/json';
       payload = JSON.stringify(body);
     }
 
     const response = await fetch(url, {
-      method,
+      method: upperMethod,
       headers,
       body: payload
     });

@@ -207,13 +207,27 @@ function createAppContext() {
 }
 
 async function startHttpServer() {
-  const { config, client, server } = createAppContext();
+  // For HTTP we don't use the createAppContext shared server — the MCP SDK
+  // forbids connecting one McpServer instance to multiple transports, so each
+  // session gets its own freshly built McpServer. Tools / client / extras are
+  // shared (cheap to register, expensive things like the rate limiter and
+  // OAuth token cache live on `client`).
+  const config = loadConfig();
+  assertBaseConfig(config);
+  const client = new PlutioClient(config);
+  const tools = createTools(client);
+  const extras = {
+    escape: buildEscapeHatchTools(client, config),
+    client360: createClient360(client)
+  };
+  const buildSessionServer = () => buildMcpServer(config, client, tools, extras);
+
   const port = Number(process.env.PORT || process.env.PLUTIO_MCP_PORT || 3000);
   const host = process.env.HOST || process.env.PLUTIO_MCP_HOST || '0.0.0.0';
   const path = process.env.MCP_PATH || '/mcp';
 
-  // sessionId -> StreamableHTTPServerTransport
-  const mcpTransports = new Map();
+  // sessionId -> { transport, server }
+  const mcpSessions = new Map();
 
   const httpServer = http.createServer(async (req, res) => {
     try {
@@ -278,27 +292,29 @@ async function startHttpServer() {
         return;
       }
 
-      // Reuse one StreamableHTTPServerTransport per session so that the
-      // initialize / tools/list / tools/call sequence within a session shares
-      // state. Without this, every request gets a fresh transport (with a
-      // fresh session id) and any post-initialize call fails with
-      // "Bad Request: Server not initialized" — which is what was causing
-      // Cowork's tool list to come back empty.
+      // Each session gets its own { transport, server } pair because the MCP
+      // SDK forbids connecting one McpServer instance to multiple transports
+      // ("Already connected to a transport. Call close() before connecting to
+      // a new transport"). The pair is created on the first request for a
+      // session and reused for the rest of that session so init / tools/list /
+      // tools/call share state.
       const incomingSession = req.headers['mcp-session-id'];
       let transport;
-      if (typeof incomingSession === 'string' && mcpTransports.has(incomingSession)) {
-        transport = mcpTransports.get(incomingSession);
+      if (typeof incomingSession === 'string' && mcpSessions.has(incomingSession)) {
+        transport = mcpSessions.get(incomingSession).transport;
       } else {
+        const sessionServer = buildSessionServer();
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (id) => {
-            mcpTransports.set(id, transport);
+            mcpSessions.set(id, { transport, server: sessionServer });
           }
         });
         transport.onclose = () => {
-          if (transport.sessionId) mcpTransports.delete(transport.sessionId);
+          if (transport.sessionId) mcpSessions.delete(transport.sessionId);
+          sessionServer.close().catch(() => {});
         };
-        await server.connect(transport);
+        await sessionServer.connect(transport);
       }
 
       await transport.handleRequest(req, res);
