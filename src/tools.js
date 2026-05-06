@@ -652,6 +652,55 @@ function createTools(client) {
       }
 
       return { results };
+    },
+
+    // ─── Task group writes ─────────────────────────────────────────────────
+    async createTaskGroup({ taskBoardId, title, color, projectId, position, isDefault, business }) {
+      const body = pick(
+        { taskBoardId, title, color, projectId, position, isDefault },
+        ['taskBoardId', 'title', 'color', 'projectId', 'position', 'isDefault']
+      );
+      return client.request('task-groups', { method: 'POST', business, body });
+    },
+
+    async updateTaskGroup({ _id, title, color, taskBoardId, projectId, isDefault, business }) {
+      const body = {
+        _id,
+        ...pick({ title, color, taskBoardId, projectId, isDefault }, ['title', 'color', 'taskBoardId', 'projectId', 'isDefault'])
+      };
+      return client.request('task-groups', { method: 'PUT', business, body });
+    },
+
+    async moveTaskGroup({ _id, taskBoardId, position, business }) {
+      return client.request('task-groups/move', {
+        method: 'POST',
+        business,
+        body: { _id, taskBoardId, position }
+      });
+    },
+
+    async copyTaskGroup({ _id, taskBoardId, position, business }) {
+      return client.request('task-groups/copy', {
+        method: 'POST',
+        business,
+        body: { _id, taskBoardId, position }
+      });
+    },
+
+    async archiveTaskGroup({ _id, isArchived, business }) {
+      return client.request('task-groups/archive', {
+        method: 'POST',
+        business,
+        body: { _id, isArchived }
+      });
+    },
+
+    async deleteTaskGroup({ _id, business }) {
+      return client.request('task-groups', {
+        method: 'DELETE',
+        business,
+        body: { _id }
+      });
     }
   };
 }

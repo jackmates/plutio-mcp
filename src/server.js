@@ -47,7 +47,13 @@ const {
   requestSchema,
   workspaceSchemaSchema,
   rateLimitStatusSchema,
-  client360Schema
+  client360Schema,
+  createTaskGroupSchema,
+  updateTaskGroupSchema,
+  moveTaskGroupSchema,
+  copyTaskGroupSchema,
+  archiveTaskGroupSchema,
+  deleteTaskGroupSchema
 } = require('./schemas');
 
 function toTextContent(data) {
@@ -147,7 +153,13 @@ function buildMcpServer(config, client, tools, extras) {
     ['plutio_create_task_safe', 'Create a task in Plutio with exact project/board/group resolution guardrails.', createTaskSafeSchema, tools.createTaskSafe],
     ['plutio_update_task', 'Update an existing task in Plutio using canonical task record _id.', updateTaskSchema, tools.updateTask],
     ['plutio_update_task_safe', 'Update an existing task in Plutio using canonical task record _id plus safe placement resolution.', updateTaskSafeSchema, tools.updateTaskSafe],
-    ['plutio_create_tasks_bulk', 'Create multiple tasks in Plutio with per-item results.', createTasksBulkSchema, tools.createTasksBulk]
+    ['plutio_create_tasks_bulk', 'Create multiple tasks in Plutio with per-item results.', createTasksBulkSchema, tools.createTasksBulk],
+    ['plutio_create_task_group', 'Create a new task group (column on a task board) with optional title, color, position, and default flag.', createTaskGroupSchema, tools.createTaskGroup],
+    ['plutio_update_task_group', 'Update an existing task group (rename, recolor, change board). Requires _id plus at least one field to update.', updateTaskGroupSchema, tools.updateTaskGroup],
+    ['plutio_move_task_group', 'Move a task group to a new position within a task board (or to a different board). Useful for reordering columns.', moveTaskGroupSchema, tools.moveTaskGroup],
+    ['plutio_copy_task_group', 'Duplicate a task group (and its content) to a destination board at the given position.', copyTaskGroupSchema, tools.copyTaskGroup],
+    ['plutio_archive_task_group', 'Archive a task group (hides from main views, data retained) or unarchive it. Pass isArchived=true to archive, false to restore.', archiveTaskGroupSchema, tools.archiveTaskGroup],
+    ['plutio_delete_task_group', 'Permanently delete a task group. Cannot be undone.', deleteTaskGroupSchema, tools.deleteTaskGroup]
   ];
 
   for (const [name, description, schema, handler] of escapeHatchTools) {

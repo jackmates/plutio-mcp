@@ -59,7 +59,13 @@ const TOOL_CATALOG = [
   { tool: 'plutio_create_task_safe', mode: 'write', category: 'project-management', apiPath: 'tasks', description: 'Create a task with exact project/board/group resolution guardrails.' },
   { tool: 'plutio_update_task', mode: 'write', category: 'project-management', apiPath: 'tasks/{id}', description: 'Update a task by canonical _id.' },
   { tool: 'plutio_update_task_safe', mode: 'write', category: 'project-management', apiPath: 'tasks/{id}', description: 'Update a task by canonical _id with safe placement resolution.' },
-  { tool: 'plutio_create_tasks_bulk', mode: 'write', category: 'project-management', apiPath: 'tasks', description: 'Create multiple tasks with per-item results.' }
+  { tool: 'plutio_create_tasks_bulk', mode: 'write', category: 'project-management', apiPath: 'tasks', description: 'Create multiple tasks with per-item results.' },
+  { tool: 'plutio_create_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups', description: 'Create a new task group (column) on a task board.' },
+  { tool: 'plutio_update_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups', description: 'Update an existing task group (rename, recolor, etc).' },
+  { tool: 'plutio_move_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/move', description: 'Reorder a task group within a board (or move to another board).' },
+  { tool: 'plutio_copy_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/copy', description: 'Duplicate a task group to a destination board.' },
+  { tool: 'plutio_archive_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/archive', description: 'Archive or unarchive a task group.' },
+  { tool: 'plutio_delete_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups', description: 'Permanently delete a task group. Cannot be undone.' }
 ];
 
 const PATH_RE = /^[A-Za-z0-9_\-./{}~]+$/;

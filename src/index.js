@@ -62,7 +62,13 @@ if (process.argv.includes('--self-test')) {
         'plutio_create_task_safe',
         'plutio_update_task',
         'plutio_update_task_safe',
-        'plutio_create_tasks_bulk'
+        'plutio_create_tasks_bulk',
+        'plutio_create_task_group',
+        'plutio_update_task_group',
+        'plutio_move_task_group',
+        'plutio_copy_task_group',
+        'plutio_archive_task_group',
+        'plutio_delete_task_group'
       ],
       null,
       2

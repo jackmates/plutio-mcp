@@ -352,6 +352,56 @@ const listBlocksSchema = z.object({
   ...businessOverride
 });
 
+// ─── Task group writes ──────────────────────────────────────────────────────
+
+const createTaskGroupSchema = z.object({
+  taskBoardId: z.string().min(1).describe('ID of the task board the new group belongs to. Required.'),
+  title: optionalString.describe('Display name for the group (e.g. "Backlog", "In Progress", "Done"). Min 1, max 256 chars.'),
+  color: optionalString.describe('Display color for the group.'),
+  projectId: optionalString.describe('Optional project id this group belongs to.'),
+  position: z.number().int().min(0).optional().describe('Optional position/order index within the task board (0 = first column).'),
+  isDefault: z.boolean().optional().describe('If true, mark as the default group for its context.'),
+  ...businessOverride
+});
+
+const updateTaskGroupSchema = z.object({
+  _id: z.string().min(1).describe('Canonical task group _id to update.'),
+  title: optionalString.describe('New title.'),
+  color: optionalString.describe('New display color.'),
+  taskBoardId: optionalString.describe('Optional move-to-board id.'),
+  projectId: optionalString.describe('Optional project id.'),
+  isDefault: z.boolean().optional(),
+  ...businessOverride
+}).refine(
+  (data) => Object.keys(data).some((key) => !['_id', 'business'].includes(key) && data[key] !== undefined),
+  { message: 'updateTaskGroup requires at least one field to update.' }
+);
+
+const moveTaskGroupSchema = z.object({
+  _id: z.string().min(1).describe('Canonical task group _id to move.'),
+  taskBoardId: z.string().min(1).describe('Destination task board id (can be the same as the current one for simple reorder).'),
+  position: z.number().int().min(0).describe('New position/order index within the destination task board (0 = first column).'),
+  ...businessOverride
+});
+
+const copyTaskGroupSchema = z.object({
+  _id: z.string().min(1).describe('Canonical task group _id to copy.'),
+  taskBoardId: z.string().min(1).describe('Destination task board id for the copy (can be the same board to duplicate inline).'),
+  position: z.number().int().min(0).describe('Position/order index where the copy should land in the destination board.'),
+  ...businessOverride
+});
+
+const archiveTaskGroupSchema = z.object({
+  _id: z.string().min(1).describe('Canonical task group _id to archive or unarchive.'),
+  isArchived: z.boolean().describe('true to archive, false to restore from archive.'),
+  ...businessOverride
+});
+
+const deleteTaskGroupSchema = z.object({
+  _id: z.string().min(1).describe('Canonical task group _id to permanently delete. Cannot be undone.'),
+  ...businessOverride
+});
+
 // ─── Escape-hatch tools ──────────────────────────────────────────────────────
 
 const apiReferenceSchema = z.object({
@@ -456,5 +506,11 @@ module.exports = {
   requestSchema,
   workspaceSchemaSchema,
   rateLimitStatusSchema,
-  client360Schema
+  client360Schema,
+  createTaskGroupSchema,
+  updateTaskGroupSchema,
+  moveTaskGroupSchema,
+  copyTaskGroupSchema,
+  archiveTaskGroupSchema,
+  deleteTaskGroupSchema
 };
