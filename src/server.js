@@ -54,7 +54,20 @@ const {
   copyTaskGroupSchema,
   archiveTaskGroupSchema,
   deleteTaskGroupSchema,
-  deleteTaskSchema
+  deleteTaskSchema,
+  getWikiSchema,
+  getWikiPageSchema,
+  listWikiPagesSchema,
+  updateWikiSchema,
+  updateWikiPageSchema,
+  moveWikiPageSchema,
+  publishWikiPageSchema,
+  deleteWikiSchema,
+  deleteWikiPageSchema,
+  updateWikiBlockSchema,
+  deleteWikiBlockSchema,
+  createWikiPagesBulkSchema,
+  updateWikiPagesBulkSchema
 } = require('./schemas');
 
 function toTextContent(data) {
@@ -90,7 +103,7 @@ function buildMcpServer(config, client, tools, extras) {
     ],
     [
       'plutio_request',
-      "Escape hatch — raw passthrough to the Plutio API. Method/path/query/body. Use when the resource-specific tools do not cover what you need.\n\nPlutio conventions to know:\n- Writes use JSON bodies (Content-Type is set automatically for POST/PUT/PATCH).\n- DELETE is `DELETE /<resource>` with `{_id}` in the body — NOT `DELETE /<resource>/{id}` (Plutio returns 403 for the path-based form).\n- Archive endpoints exist for some resources (e.g. POST /task-groups/archive) but not all (POST /tasks/archive 404s; toggle isArchived via PUT /tasks instead).\n\nGET-only when PLUTIO_MCP_MODE=readonly.",
+      "Escape hatch — raw passthrough to the Plutio API. Method/path/query/body. Use when the resource-specific tools do not cover what you need.\n\nPlutio path conventions (where the docs are misleading):\n- Wikis live at `/wiki` (singular) and `/wiki-entities` (pages + categories). The plurals `/wikis` and `/wiki-pages` 403 across the board.\n- Most other resources use plural paths: /tasks, /task-groups, /people, /projects, /invoices, /proposals, /contracts.\n\nMethod conventions:\n- Writes use JSON bodies (Content-Type is set automatically for POST/PUT/PATCH/DELETE).\n- DELETE is `DELETE /<resource>` with `{_id}` in the body — NOT `DELETE /<resource>/{id}` (Plutio returns 403 for the path-based form).\n- GET single record is `GET /<resource>?q={\"_id\":\"...\"}` for most resources, but a few endpoints (notably /wiki-entities) reject _id-only filters — list and match client-side.\n- Archive endpoints exist for some resources (e.g. POST /task-groups/archive) but not all (POST /tasks/archive 404s; toggle isArchived via PUT instead).\n\nGET-only when PLUTIO_MCP_MODE=readonly.",
       requestSchema,
       extras.escape.request
     ],
@@ -135,7 +148,10 @@ function buildMcpServer(config, client, tools, extras) {
     ['plutio_list_task_groups', 'List task groups, optionally scoped by task board.', listTaskGroupsSchema, tools.listTaskGroups],
     ['plutio_list_tasks', 'List tasks with optional filters.', listTasksSchema, tools.listTasks],
     ['plutio_list_time_tracks', 'List time tracks with optional filters.', listTimeTracksSchema, tools.listTimeTracks],
-    ['plutio_get_task', 'Fetch a single task by canonical task record _id.', getTaskSchema, tools.getTask]
+    ['plutio_get_task', 'Fetch a single task by canonical task record _id.', getTaskSchema, tools.getTask],
+    ['plutio_get_wiki', 'Fetch a single wiki container (with full designOptions, theme, share settings, blocksLayout) by wiki _id. Calls GET /wiki (singular) — Plutio rejects /wikis with 403.', getWikiSchema, tools.getWiki.bind(tools)],
+    ['plutio_get_wiki_page', 'Fetch a single wiki page (with designOptions, blocks, meta, status, icon) by canonical wiki-entity _id. Internally lists from /wiki-entities and matches by _id (Plutio does not support _id-only filters on this endpoint).', getWikiPageSchema, tools.getWikiPage.bind(tools)],
+    ['plutio_list_wiki_pages', 'List wiki pages and categories with FULL records (designOptions, blocks, meta) — unlike list_wiki which returns only the nested shallow tree. Filter by wikiId/parentId/status/type. Calls GET /wiki-entities.', listWikiPagesSchema, tools.listWikiPages.bind(tools)]
   ];
 
   const writeTools = [
@@ -161,7 +177,18 @@ function buildMcpServer(config, client, tools, extras) {
     ['plutio_copy_task_group', 'Duplicate a task group (and its content) to a destination board at the given position.', copyTaskGroupSchema, tools.copyTaskGroup],
     ['plutio_archive_task_group', 'Archive a task group (hides from main views, data retained) or unarchive it. Pass isArchived=true to archive, false to restore.', archiveTaskGroupSchema, tools.archiveTaskGroup],
     ['plutio_delete_task_group', 'Permanently delete a task group. Cannot be undone.', deleteTaskGroupSchema, tools.deleteTaskGroup],
-    ['plutio_delete_task', 'Permanently delete a task by canonical task record _id. Cannot be undone. Calls DELETE /tasks with {_id} in the body (Plutio does not support DELETE /tasks/{id}).', deleteTaskSchema, tools.deleteTask]
+    ['plutio_delete_task', 'Permanently delete a task by canonical task record _id. Cannot be undone. Calls DELETE /tasks with {_id} in the body (Plutio does not support DELETE /tasks/{id}).', deleteTaskSchema, tools.deleteTask],
+    ['plutio_update_wiki', 'Update a wiki container — title, description, designOptions, share settings, logo, color, iconImage, index. Calls PUT /wiki with {_id, ...}.', updateWikiSchema, tools.updateWiki.bind(tools)],
+    ['plutio_update_wiki_page', 'Update a wiki page — title, parentId (re-parent), status (draft|published), designOptions, icon, meta, index. Calls PUT /wiki-entities with {_id, ...}.', updateWikiPageSchema, tools.updateWikiPage.bind(tools)],
+    ['plutio_move_wiki_page', 'Move a wiki page to a new parent and/or position among siblings. Pass the wikiId as parentId for top-level placement. Calls POST /wiki-entities/move.', moveWikiPageSchema, tools.moveWikiPage.bind(tools)],
+    ['plutio_publish_wiki_page', "Convenience wrapper: set status='published' on a wiki page.", publishWikiPageSchema, tools.publishWikiPage.bind(tools)],
+    ['plutio_unpublish_wiki_page', "Convenience wrapper: set status='draft' on a wiki page (revert publish).", publishWikiPageSchema, tools.unpublishWikiPage.bind(tools)],
+    ['plutio_delete_wiki', 'Permanently delete a wiki container (cascades to its pages). DELETE /wiki with {_id}.', deleteWikiSchema, tools.deleteWiki.bind(tools)],
+    ['plutio_delete_wiki_page', 'Permanently delete a wiki page or category. DELETE /wiki-entities with {_id}.', deleteWikiPageSchema, tools.deleteWikiPage.bind(tools)],
+    ['plutio_update_wiki_block', "Update a wiki page's content block (HTML body, plain text, design options). Cleaner alternative to update_contract_block for wiki entityType — does NOT send the contract-only `hasText` payload that wiki blocks reject.", updateWikiBlockSchema, tools.updateWikiBlock.bind(tools)],
+    ['plutio_delete_wiki_block', 'Permanently delete a custom block from a wiki page. The auto-generated default content block on each page is not safe to delete.', deleteWikiBlockSchema, tools.deleteWikiBlock.bind(tools)],
+    ['plutio_create_wiki_pages_bulk', 'Bulk create wiki pages with per-item results. Each item is a full create_wiki_page payload (wikiId, title, optional parentId, textHTML/textPlain, designOptions, icon, meta, status, type).', createWikiPagesBulkSchema, tools.createWikiPagesBulk.bind(tools)],
+    ['plutio_update_wiki_pages_bulk', 'Bulk update wiki pages with per-item results. Each item is { pageId, ...partial update }.', updateWikiPagesBulkSchema, tools.updateWikiPagesBulk.bind(tools)]
   ];
 
   for (const [name, description, schema, handler] of escapeHatchTools) {

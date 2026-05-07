@@ -69,7 +69,21 @@ if (process.argv.includes('--self-test')) {
         'plutio_copy_task_group',
         'plutio_archive_task_group',
         'plutio_delete_task_group',
-        'plutio_delete_task'
+        'plutio_delete_task',
+        'plutio_get_wiki',
+        'plutio_get_wiki_page',
+        'plutio_list_wiki_pages',
+        'plutio_update_wiki',
+        'plutio_update_wiki_page',
+        'plutio_move_wiki_page',
+        'plutio_publish_wiki_page',
+        'plutio_unpublish_wiki_page',
+        'plutio_delete_wiki',
+        'plutio_delete_wiki_page',
+        'plutio_update_wiki_block',
+        'plutio_delete_wiki_block',
+        'plutio_create_wiki_pages_bulk',
+        'plutio_update_wiki_pages_bulk'
       ],
       null,
       2

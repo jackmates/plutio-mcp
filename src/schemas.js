@@ -211,9 +211,14 @@ const createWikiPageSchema = z.object({
   wikiId: z.string().min(1).describe('Parent wiki id.'),
   parentId: optionalString.describe('Optional parent id within the wiki tree. Defaults to wikiId for a top-level page.'),
   title: z.string().min(1).describe('Wiki page title.'),
-  textPlain: optionalString.describe('Optional plain-text body. If supplied, the generated content block is updated.'),
-  textHTML: optionalString.describe('Optional HTML body. If omitted but textPlain is supplied, a simple paragraph HTML wrapper is generated.'),
-  status: optionalString.describe('Optional page status. Defaults to draft if omitted by Plutio.'),
+  textPlain: optionalString.describe('Optional plain-text body. Updates the auto-generated content block if supplied.'),
+  textHTML: optionalString.describe('Optional HTML body. Now also triggers the content-block update on its own (plain text is auto-derived from the HTML for the search index). Pair with textPlain for full control.'),
+  status: optionalString.describe("Optional page status: 'draft' (default) or 'published'."),
+  type: optionalString.describe("Optional entity type. 'page' (default) or 'category' for a folder/section."),
+  designOptions: z.record(z.string(), z.unknown()).optional().describe('Optional style block applied at creation. Same shape as Plutio returns on read (id, maxWidth, section{...}, fonts, etc.).'),
+  icon: z.record(z.string(), z.unknown()).optional().describe('Optional icon object.'),
+  meta: z.record(z.string(), z.unknown()).optional().describe('Optional meta object (cover image, etc.).'),
+  index: z.number().int().optional().describe('Optional sort index among siblings.'),
   ...businessOverride
 });
 
@@ -411,6 +416,140 @@ const deleteTaskSchema = z.object({
   { message: 'deleteTask requires taskRecordId (canonical task _id).' }
 );
 
+// ─── Wiki reads/writes ──────────────────────────────────────────────────────
+//
+// Important: Plutio's wiki API uses path names `/wiki` (singular) for the
+// container and `/wiki-entities` for both pages AND categories. The plural
+// forms `/wikis` and `/wiki-pages` return 403 at the Plutio edge.
+
+const wikiDesignOptionsField = z
+  .record(z.string(), z.unknown())
+  .optional()
+  .describe('Style block. May include id, maxWidth, section.{bgColor,padding,...}, font settings, etc. Pass full or partial; Plutio merges shallowly.');
+
+const getWikiSchema = z.object({
+  wikiId: z.string().min(1).describe('Canonical wiki _id.'),
+  ...businessOverride
+});
+
+const getWikiPageSchema = z.object({
+  pageId: z.string().min(1).describe('Canonical wiki-entity _id (a page or category).'),
+  wikiId: optionalString.describe('Optional wikiId — speeds up the lookup by scoping the list query.'),
+  ...businessOverride
+});
+
+const listWikiPagesSchema = z.object({
+  wikiId: optionalString.describe('Filter by wiki container _id.'),
+  parentId: optionalString.describe('Filter by parent page/category _id (use the wikiId for top-level pages).'),
+  status: optionalString.describe("Filter by status, e.g. 'draft' or 'published'."),
+  type: optionalString.describe("Filter by entity type. 'page' for content pages, 'category' for folders."),
+  ...paging,
+  ...businessOverride
+});
+
+const updateWikiSchema = z.object({
+  wikiId: z.string().min(1).describe('Canonical wiki _id to update.'),
+  title: optionalString,
+  description: optionalString,
+  designOptions: wikiDesignOptionsField,
+  shareSettings: z.record(z.string(), z.unknown()).optional(),
+  privateShareSettings: z.record(z.string(), z.unknown()).optional(),
+  logo: z.record(z.string(), z.unknown()).optional(),
+  iconImage: z.record(z.string(), z.unknown()).optional(),
+  color: optionalString,
+  index: z.number().int().optional(),
+  ...businessOverride
+}).refine(
+  (data) => Object.keys(data).some((k) => !['wikiId', 'business'].includes(k) && data[k] !== undefined),
+  { message: 'updateWiki requires at least one field to update.' }
+);
+
+const wikiPageMutableFields = {
+  title: optionalString,
+  parentId: optionalString.describe('New parent _id (or wikiId for top-level).'),
+  status: optionalString.describe("'draft' | 'published'."),
+  designOptions: wikiDesignOptionsField,
+  icon: z.record(z.string(), z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
+  index: z.number().int().optional(),
+  type: optionalString.describe("'page' or 'category' — only set when intentionally converting between types.")
+};
+
+const updateWikiPageSchema = z.object({
+  pageId: z.string().min(1).describe('Canonical wiki-entity _id to update.'),
+  ...wikiPageMutableFields,
+  ...businessOverride
+}).refine(
+  (data) => Object.keys(wikiPageMutableFields).some((k) => data[k] !== undefined),
+  { message: 'updateWikiPage requires at least one field to update.' }
+);
+
+const moveWikiPageSchema = z.object({
+  pageId: z.string().min(1).describe('Canonical wiki-entity _id to move.'),
+  parentId: z.string().min(1).describe('New parent — pass the wikiId to move to top level.'),
+  position: z.number().int().min(0).describe('Position among siblings (0 = first).'),
+  ...businessOverride
+});
+
+const publishWikiPageSchema = z.object({
+  pageId: z.string().min(1),
+  ...businessOverride
+});
+
+const deleteWikiSchema = z.object({
+  wikiId: z.string().min(1).describe('Canonical wiki _id to permanently delete (cascades to its pages).'),
+  ...businessOverride
+});
+
+const deleteWikiPageSchema = z.object({
+  pageId: z.string().min(1).describe('Canonical wiki-entity _id to permanently delete.'),
+  ...businessOverride
+});
+
+const updateWikiBlockSchema = z.object({
+  blockId: z.string().min(1).describe('Canonical block _id to update.'),
+  textHTML: optionalString,
+  textPlain: optionalString,
+  designOptions: wikiDesignOptionsField,
+  type: optionalString,
+  ...businessOverride
+}).refine(
+  (data) => ['textHTML', 'textPlain', 'designOptions', 'type'].some((k) => data[k] !== undefined),
+  { message: 'updateWikiBlock requires at least one field to update.' }
+);
+
+const deleteWikiBlockSchema = z.object({
+  blockId: z.string().min(1).describe('Canonical block _id to permanently delete.'),
+  ...businessOverride
+});
+
+const wikiPageInputFields = {
+  wikiId: z.string().min(1).describe('Wiki container _id this page belongs to.'),
+  title: z.string().min(1).describe('Page title.'),
+  parentId: optionalString.describe('Parent _id (defaults to wikiId for top-level placement).'),
+  textPlain: optionalString.describe('Plain-text body. If supplied, the auto-generated content block is updated.'),
+  textHTML: optionalString.describe('HTML body. NOW updates the content block even if textPlain is omitted (auto-derives plain text from the HTML).'),
+  status: optionalString.describe("'draft' or 'published'."),
+  type: optionalString.describe("'page' (default) or 'category'."),
+  designOptions: wikiDesignOptionsField,
+  icon: z.record(z.string(), z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
+  index: z.number().int().optional()
+};
+
+const createWikiPagesBulkSchema = z.object({
+  pages: z.array(z.object({ ...wikiPageInputFields })).min(1).describe('Pages to create. Each item is a full create payload.'),
+  ...businessOverride
+});
+
+const updateWikiPagesBulkSchema = z.object({
+  updates: z.array(z.object({
+    pageId: z.string().min(1),
+    ...wikiPageMutableFields
+  })).min(1).describe('Updates to apply. Each item is a partial update keyed by pageId.'),
+  ...businessOverride
+});
+
 // ─── Escape-hatch tools ──────────────────────────────────────────────────────
 
 const apiReferenceSchema = z.object({
@@ -522,5 +661,18 @@ module.exports = {
   copyTaskGroupSchema,
   archiveTaskGroupSchema,
   deleteTaskGroupSchema,
-  deleteTaskSchema
+  deleteTaskSchema,
+  getWikiSchema,
+  getWikiPageSchema,
+  listWikiPagesSchema,
+  updateWikiSchema,
+  updateWikiPageSchema,
+  moveWikiPageSchema,
+  publishWikiPageSchema,
+  deleteWikiSchema,
+  deleteWikiPageSchema,
+  updateWikiBlockSchema,
+  deleteWikiBlockSchema,
+  createWikiPagesBulkSchema,
+  updateWikiPagesBulkSchema
 };

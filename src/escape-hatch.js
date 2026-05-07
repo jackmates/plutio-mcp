@@ -66,7 +66,21 @@ const TOOL_CATALOG = [
   { tool: 'plutio_copy_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/copy', description: 'Duplicate a task group to a destination board.' },
   { tool: 'plutio_archive_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups/archive', description: 'Archive or unarchive a task group.' },
   { tool: 'plutio_delete_task_group', mode: 'write', category: 'project-management', apiPath: 'task-groups', description: 'Permanently delete a task group. Cannot be undone.' },
-  { tool: 'plutio_delete_task', mode: 'write', category: 'project-management', apiPath: 'tasks', description: 'Permanently delete a task by canonical _id. DELETE /tasks with {_id} in body. Cannot be undone.' }
+  { tool: 'plutio_delete_task', mode: 'write', category: 'project-management', apiPath: 'tasks', description: 'Permanently delete a task by canonical _id. DELETE /tasks with {_id} in body. Cannot be undone.' },
+  { tool: 'plutio_get_wiki', mode: 'read', category: 'knowledge', apiPath: 'wiki', description: 'Fetch a single wiki container by _id. Plutio uses /wiki (singular) — /wikis 403s.' },
+  { tool: 'plutio_get_wiki_page', mode: 'read', category: 'knowledge', apiPath: 'wiki-entities', description: 'Fetch a single wiki page (full record incl. designOptions, blocks). Internally lists and matches by _id.' },
+  { tool: 'plutio_list_wiki_pages', mode: 'read', category: 'knowledge', apiPath: 'wiki-entities', description: 'List wiki pages with full records, filterable by wikiId/parentId/status/type.' },
+  { tool: 'plutio_update_wiki', mode: 'write', category: 'knowledge', apiPath: 'wiki', description: 'Update wiki container fields. PUT /wiki with {_id, ...}.' },
+  { tool: 'plutio_update_wiki_page', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities', description: 'Update a wiki page (title, parentId, status, designOptions, icon, meta).' },
+  { tool: 'plutio_move_wiki_page', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities/move', description: 'Move a wiki page to a new parent and/or position.' },
+  { tool: 'plutio_publish_wiki_page', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities', description: "Set wiki page status='published'." },
+  { tool: 'plutio_unpublish_wiki_page', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities', description: "Set wiki page status='draft'." },
+  { tool: 'plutio_delete_wiki', mode: 'write', category: 'knowledge', apiPath: 'wiki', description: 'Delete a wiki container (cascades).' },
+  { tool: 'plutio_delete_wiki_page', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities', description: 'Delete a wiki page or category.' },
+  { tool: 'plutio_update_wiki_block', mode: 'write', category: 'knowledge', apiPath: 'blocks', description: "Update a wiki page's content block (no contract-block hasText quirk)." },
+  { tool: 'plutio_delete_wiki_block', mode: 'write', category: 'knowledge', apiPath: 'blocks', description: 'Delete a custom block from a wiki page.' },
+  { tool: 'plutio_create_wiki_pages_bulk', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities', description: 'Bulk create wiki pages with per-item results.' },
+  { tool: 'plutio_update_wiki_pages_bulk', mode: 'write', category: 'knowledge', apiPath: 'wiki-entities', description: 'Bulk update wiki pages with per-item results.' }
 ];
 
 const PATH_RE = /^[A-Za-z0-9_\-./{}~]+$/;

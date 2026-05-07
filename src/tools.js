@@ -275,14 +275,21 @@ function createTools(client) {
       });
     },
 
-    async createWikiPage({ wikiId, parentId, title, textPlain, textHTML, status, business }) {
+    async createWikiPage({ wikiId, parentId, title, textPlain, textHTML, status, type, designOptions, icon, meta, index, business }) {
       const page = await client.request('wiki-entities', {
         method: 'POST',
         business,
-        body: pick({ wikiId, parentId: parentId || wikiId, title, type: 'page', status }, ['wikiId', 'parentId', 'title', 'type', 'status'])
+        body: pick(
+          { wikiId, parentId: parentId || wikiId, title, type: type || 'page', status, designOptions, icon, meta, index },
+          ['wikiId', 'parentId', 'title', 'type', 'status', 'designOptions', 'icon', 'meta', 'index']
+        )
       });
 
-      if (textPlain) {
+      // Either textPlain or textHTML now triggers content-block population.
+      // If only textHTML is supplied, derive a simple plain-text fallback for
+      // the search index from the HTML.
+      const hasContent = Boolean(textPlain || textHTML);
+      if (hasContent) {
         const blocks = await client.request('blocks', {
           query: { entityType: 'wiki-page', entityId: page._id, limit: 20 },
           business
@@ -292,6 +299,8 @@ function createTools(client) {
           throw new Error(`Created wiki page ${page._id} but could not find its generated content block for text update.`);
         }
 
+        const stripHtml = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        const resolvedPlain = textPlain || stripHtml(textHTML);
         const renderedHtml = textHTML || `<p>${String(textPlain)
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
@@ -304,7 +313,7 @@ function createTools(client) {
           body: {
             _id: contentBlock._id,
             hasText: true,
-            textPlain,
+            textPlain: resolvedPlain,
             textHTML: renderedHtml
           }
         });
@@ -717,6 +726,134 @@ function createTools(client) {
         body: { _id: canonicalTaskId }
       });
       return normalizeTaskResult(result);
+    },
+
+    // ─── Wiki reads/writes ────────────────────────────────────────────────
+    // Plutio's wiki API uses /wiki for the container and /wiki-entities for
+    // pages and categories. The plurals /wikis and /wiki-pages return 403.
+    async getWiki({ wikiId, business }) {
+      const result = await client.request('wiki', {
+        query: { q: { _id: wikiId } },
+        business
+      });
+      if (Array.isArray(result)) {
+        const found = result.find((w) => w && w._id === wikiId);
+        if (!found) throw new Error(`Wiki not found by _id: ${wikiId}`);
+        return found;
+      }
+      return result;
+    },
+
+    async getWikiPage({ pageId, wikiId, business }) {
+      // Plutio's GET /wiki-entities?q={_id:..} returns 404; instead list
+      // (optionally scoped by wikiId) and find by _id client-side.
+      const filter = wikiId ? { wikiId } : {};
+      const list = await client.request('wiki-entities', {
+        query: { q: filter, limit: 1000 },
+        business
+      });
+      const found = Array.isArray(list) ? list.find((p) => p && p._id === pageId) : null;
+      if (!found) throw new Error(`Wiki page not found by _id: ${pageId}${wikiId ? ` in wiki ${wikiId}` : ''}`);
+      return found;
+    },
+
+    async listWikiPages({ wikiId, parentId, status, type, skip, limit, business }) {
+      const filter = pick({ wikiId, parentId, status, type }, ['wikiId', 'parentId', 'status', 'type']);
+      return client.request('wiki-entities', {
+        query: withPaging(filter, skip, limit || 1000),
+        business
+      });
+    },
+
+    async updateWiki({ wikiId, business, ...updates }) {
+      const body = {
+        _id: wikiId,
+        ...pick(updates, ['title', 'description', 'designOptions', 'shareSettings', 'privateShareSettings', 'logo', 'iconImage', 'color', 'index'])
+      };
+      return client.request('wiki', { method: 'PUT', business, body });
+    },
+
+    async updateWikiPage({ pageId, business, ...updates }) {
+      const body = {
+        _id: pageId,
+        ...pick(updates, ['title', 'parentId', 'status', 'designOptions', 'icon', 'meta', 'index', 'type'])
+      };
+      return client.request('wiki-entities', { method: 'PUT', business, body });
+    },
+
+    async moveWikiPage({ pageId, parentId, position, business }) {
+      return client.request('wiki-entities/move', {
+        method: 'POST',
+        business,
+        body: { _id: pageId, parentId, position }
+      });
+    },
+
+    async publishWikiPage({ pageId, business }) {
+      return client.request('wiki-entities', {
+        method: 'PUT',
+        business,
+        body: { _id: pageId, status: 'published' }
+      });
+    },
+
+    async unpublishWikiPage({ pageId, business }) {
+      return client.request('wiki-entities', {
+        method: 'PUT',
+        business,
+        body: { _id: pageId, status: 'draft' }
+      });
+    },
+
+    async deleteWiki({ wikiId, business }) {
+      return client.request('wiki', { method: 'DELETE', business, body: { _id: wikiId } });
+    },
+
+    async deleteWikiPage({ pageId, business }) {
+      return client.request('wiki-entities', { method: 'DELETE', business, body: { _id: pageId } });
+    },
+
+    async updateWikiBlock({ blockId, business, ...updates }) {
+      const body = {
+        _id: blockId,
+        ...pick(updates, ['textHTML', 'textPlain', 'designOptions', 'type'])
+      };
+      // Plutio's wiki-block schema rejects hasText, so we don't add it here
+      // (unlike the contract-block path). Setting either text field works.
+      return client.request('blocks', { method: 'PUT', business, body });
+    },
+
+    async deleteWikiBlock({ blockId, business }) {
+      return client.request('blocks', { method: 'DELETE', business, body: { _id: blockId } });
+    },
+
+    async createWikiPagesBulk({ pages, business }) {
+      const results = [];
+      for (const [index, page] of pages.entries()) {
+        try {
+          const created = await this.createWikiPage({ ...page, business: page.business || business });
+          // createWikiPage may return the page directly OR { page, contentBlock }
+          // depending on whether content was supplied; normalize.
+          const pageRecord = created && created._id ? created : (created && created.page ? created.page : created);
+          results.push({ index, ok: true, page: pageRecord });
+        } catch (error) {
+          results.push({ index, ok: false, error: error.message || String(error) });
+        }
+      }
+      return { results };
+    },
+
+    async updateWikiPagesBulk({ updates, business }) {
+      const results = [];
+      for (const [index, update] of updates.entries()) {
+        try {
+          const updated = await this.updateWikiPage({ ...update, business: update.business || business });
+          results.push({ index, ok: true, page: updated });
+        } catch (error) {
+          results.push({ index, ok: false, error: error.message || String(error) });
+        }
+      }
+      return { results };
     }
   };
 }
